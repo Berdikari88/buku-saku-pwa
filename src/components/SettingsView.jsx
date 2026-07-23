@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { UserRound, Edit3, Target, Wallet, CreditCard, Fingerprint, Sparkles, DownloadCloud, LogOut, ChevronRight, X, CheckCircle2, AlertCircle, Info, Calendar, Zap, Trophy, PlusCircle, Filter, Tags, Box, ShoppingBag, Coffee, Heart, Monitor, Smile } from "lucide-react";
+// KITA HANYA MENGGUNAKAN IKON STANDAR YANG PASTI AMAN
+import { User, Edit3, Target, Wallet, CreditCard, Fingerprint, Sparkles, DownloadCloud, LogOut, ChevronRight, X, CheckCircle2, AlertCircle, Info, Calendar, Zap, Trophy, PlusCircle, Filter, Tags, Box, ShoppingBag, Coffee, Heart, Monitor, Smile } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 export default function SettingsView({ setAccounts, setTransactions, setChatHistory, setActiveTab, fetchData, accounts, transactions }) {
@@ -290,20 +291,14 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         </div>
       )}
 
-      {/* KARTU PROFIL DENGAN AVATAR DINAMIS & BRUTALIST */}
+      {/* KARTU PROFIL UTAMA (REVISI AMAN) */}
       <div className="bg-[#1E1E1E] text-white p-5 rounded-3xl border-2 border-[#1E1E1E] shadow-[6px_6px_0px_0px_#10B981] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-xl"></div>
         <div className="flex items-center gap-4 relative z-10">
           
+          {/* LOGIKA BINGKAI SAJA: Lingkaran = Perempuan, Kotak Tegas = Laki-laki */}
           <div className={`w-14 h-14 bg-emerald-400 border-2 border-white flex items-center justify-center flex-shrink-0 shadow-[2px_2px_0px_0px_#ffffff] ${profile.gender === 'Perempuan' ? 'rounded-full' : 'rounded-lg'}`}>
-            {profile.gender === 'Perempuan' ? (
-              <UserRound size={28} className="text-[#1E1E1E]" />
-            ) : (
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square" strokeLinejoin="miter" className="text-[#1E1E1E]">
-                <rect x="8" y="4" width="8" height="8" />
-                <path d="M5 22v-6h14v6" />
-              </svg>
-            )}
+            <User size={28} className="text-[#1E1E1E]" />
           </div>
           
           <div className="flex-1 min-w-0">
@@ -412,20 +407,13 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         <LogOut size={18} /> LOGOUT & KELUAR
       </button>
 
-      {/* POP UP EDIT PROFIL */}
+      {/* POP UP EDIT PROFIL (REVISI AMAN) */}
       {isEditProfileModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[6px_6px_0px_0px_#1E1E1E] space-y-4 animate-in slide-in-from-bottom-8">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                {profile.gender === 'Perempuan' ? (
-                  <UserRound size={18} className="text-emerald-600" />
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square" strokeLinejoin="miter" className="text-emerald-600">
-                    <rect x="8" y="4" width="8" height="8" />
-                    <path d="M5 22v-6h14v6" />
-                  </svg>
-                )}
+                <User size={18} className="text-emerald-600" />
                 <h4 className="text-xs font-black uppercase tracking-wider">Edit Profil</h4>
               </div>
               <button onClick={() => setIsEditProfileModalOpen(false)} className="w-7 h-7 bg-stone-200 border border-[#1E1E1E] rounded-lg flex items-center justify-center hover:bg-stone-300">
