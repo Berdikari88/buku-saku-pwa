@@ -1,9 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-// 1. URL sudah aku perbaiki, tidak pakai /rest/v1/ lagi
-const supabaseUrl = 'https://tuymrzmiyxlcvtqjbujn.supabase.co'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// 2. TUGASMU: Ganti teks di bawah ini dengan API KEY PANJANG yang berawalan eyJhb...
-const supabaseAnonKey = 'sb_publishable_Bx0q7FQ8S2KjWVN9bh-J8A_K8MSrFKS'
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseKey)
