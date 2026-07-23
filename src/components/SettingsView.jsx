@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-// Impor ikon tambahan untuk kategori (Tags, Box, ShoppingBag, dll)
-import { User, Edit3, Target, Wallet, CreditCard, Fingerprint, Sparkles, DownloadCloud, LogOut, ChevronRight, X, CheckCircle2, AlertCircle, Info, Calendar, Zap, Trophy, PlusCircle, Filter, Tags, Box, ShoppingBag, Coffee, Heart, Monitor, Smile } from "lucide-react";
+import { UserRound, Edit3, Target, Wallet, CreditCard, Fingerprint, Sparkles, DownloadCloud, LogOut, ChevronRight, X, CheckCircle2, AlertCircle, Info, Calendar, Zap, Trophy, PlusCircle, Filter, Tags, Box, ShoppingBag, Coffee, Heart, Monitor, Smile } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 export default function SettingsView({ setAccounts, setTransactions, setChatHistory, setActiveTab, fetchData, accounts, transactions }) {
-  const [profile, setProfile] = useState({ full_name: "Memuat...", email: "..." });
+  const [profile, setProfile] = useState({ full_name: "Memuat...", email: "...", gender: "Laki-laki" });
+  
+  const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+  const [editFullName, setEditFullName] = useState("");
+  const [profileLoading, setProfileLoading] = useState(false);
   
   const [useBiometric, setUseBiometric] = useState(() => localStorage.getItem('useBiometric') === 'true');
   
@@ -23,9 +26,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
   const [ccDueDate, setCcDueDate] = useState("");
   const [ccLoading, setCcLoading] = useState(false);
 
-  // ==========================================
-  // STATE BARU: MANAJEMEN KATEGORI KUSTOM
-  // ==========================================
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [catName, setCatName] = useState("");
   const [catIcon, setCatIcon] = useState("box");
@@ -63,8 +63,12 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     async function loadProfile() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
-        setProfile({ full_name: data?.full_name || "Pengguna Baru", email: user.email });
+        const { data } = await supabase.from('profiles').select('full_name, gender').eq('id', user.id).single();
+        setProfile({ 
+          full_name: data?.full_name || "Pengguna Baru", 
+          email: user.email,
+          gender: data?.gender || "Laki-laki" 
+        });
       }
     }
     loadProfile();
@@ -75,6 +79,31 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     const numericValue = value.replace(/[^0-9]/g, "");
     if (!numericValue) { setterFunction(""); return; }
     setterFunction(Number(numericValue).toLocaleString("id-ID"));
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    if (!editFullName) return;
+    setProfileLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Gagal mengidentifikasi pengguna.");
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: editFullName })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile(prev => ({ ...prev, full_name: editFullName }));
+      showToast("Nama berhasil diperbarui!", "success");
+      setIsEditProfileModalOpen(false);
+    } catch (error) {
+      showToast("Gagal memperbarui profil: " + error.message, "error");
+    } finally {
+      setProfileLoading(false);
+    }
   };
 
   const handleToggleBiometric = () => {
@@ -209,9 +238,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     }
   };
 
-  // ==========================================
-  // FUNGSI BARU: SIMPAN KATEGORI KUSTOM
-  // ==========================================
   const handleCreateCategory = async (e) => {
     e.preventDefault();
     if (!catName) return;
@@ -239,7 +265,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     await supabase.auth.signOut();
   };
 
-  // Pilihan ikon visual elegan untuk Kategori
   const iconOptions = [
     { id: 'box', icon: <Box size={20}/>, label: 'Umum' },
     { id: 'shopping-cart', icon: <ShoppingBag size={20}/>, label: 'Belanja' },
@@ -265,19 +290,35 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         </div>
       )}
 
-      {/* KARTU PROFIL */}
+      {/* KARTU PROFIL DENGAN AVATAR DINAMIS & BRUTALIST */}
       <div className="bg-[#1E1E1E] text-white p-5 rounded-3xl border-2 border-[#1E1E1E] shadow-[6px_6px_0px_0px_#10B981] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-xl"></div>
         <div className="flex items-center gap-4 relative z-10">
-          <div className="w-14 h-14 bg-emerald-400 rounded-2xl border-2 border-white flex items-center justify-center flex-shrink-0 shadow-[2px_2px_0px_0px_#ffffff]">
-            <User size={28} className="text-[#1E1E1E]" />
+          
+          <div className={`w-14 h-14 bg-emerald-400 border-2 border-white flex items-center justify-center flex-shrink-0 shadow-[2px_2px_0px_0px_#ffffff] ${profile.gender === 'Perempuan' ? 'rounded-full' : 'rounded-lg'}`}>
+            {profile.gender === 'Perempuan' ? (
+              <UserRound size={28} className="text-[#1E1E1E]" />
+            ) : (
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square" strokeLinejoin="miter" className="text-[#1E1E1E]">
+                <rect x="8" y="4" width="8" height="8" />
+                <path d="M5 22v-6h14v6" />
+              </svg>
+            )}
           </div>
+          
           <div className="flex-1 min-w-0">
-            <h2 className="font-black text-lg truncate">{profile.full_name}</h2>
+            <h2 className="font-black text-lg truncate uppercase">{profile.full_name}</h2>
             <p className="text-[10px] font-bold text-stone-400 truncate mb-1">{profile.email}</p>
             <span className="inline-block bg-emerald-500 text-[#1E1E1E] text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Pro Plan</span>
           </div>
-          <button className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 flex items-center justify-center transition active:scale-95 flex-shrink-0">
+          
+          <button 
+            onClick={() => {
+              setEditFullName(profile.full_name);
+              setIsEditProfileModalOpen(true);
+            }} 
+            className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 flex items-center justify-center transition active:scale-95 flex-shrink-0"
+          >
             <Edit3 size={18} className="text-white" />
           </button>
         </div>
@@ -317,9 +358,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
             <ChevronRight size={18} className="text-stone-400" />
           </button>
 
-          {/* ========================================== */}
-          {/* TOMBOL MENU KATEGORI BARU */}
-          {/* ========================================== */}
           <button onClick={() => setIsCategoryModalOpen(true)} className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition active:bg-stone-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-sky-400 rounded-xl border-2 border-[#1E1E1E] flex items-center justify-center shadow-[2px_2px_0px_0px_#1E1E1E]">
@@ -374,7 +412,59 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         <LogOut size={18} /> LOGOUT & KELUAR
       </button>
 
-      {/* POP-UP EDUKASI TARGET TABUNGAN */}
+      {/* POP UP EDIT PROFIL */}
+      {isEditProfileModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[6px_6px_0px_0px_#1E1E1E] space-y-4 animate-in slide-in-from-bottom-8">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                {profile.gender === 'Perempuan' ? (
+                  <UserRound size={18} className="text-emerald-600" />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square" strokeLinejoin="miter" className="text-emerald-600">
+                    <rect x="8" y="4" width="8" height="8" />
+                    <path d="M5 22v-6h14v6" />
+                  </svg>
+                )}
+                <h4 className="text-xs font-black uppercase tracking-wider">Edit Profil</h4>
+              </div>
+              <button onClick={() => setIsEditProfileModalOpen(false)} className="w-7 h-7 bg-stone-200 border border-[#1E1E1E] rounded-lg flex items-center justify-center hover:bg-stone-300">
+                <X size={14} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleUpdateProfile} className="space-y-4 mt-2">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-stone-500 uppercase">Nama Lengkap</label>
+                <input 
+                  type="text" 
+                  value={editFullName} 
+                  onChange={(e) => setEditFullName(e.target.value)} 
+                  placeholder="Masukkan nama baru" 
+                  className="w-full p-2.5 text-xs border-2 border-[#1E1E1E] rounded-xl font-bold uppercase outline-none focus:border-emerald-500 transition" 
+                  required 
+                />
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-stone-500 uppercase">Alamat Email (Tidak bisa diubah)</label>
+                <input 
+                  type="email" 
+                  value={profile.email} 
+                  disabled 
+                  className="w-full p-2.5 text-xs border-2 border-stone-300 rounded-xl font-bold bg-stone-100 text-stone-400 cursor-not-allowed" 
+                />
+              </div>
+              
+              <button type="submit" disabled={profileLoading} className="w-full bg-emerald-500 text-white font-black text-xs py-3.5 rounded-xl border-2 border-[#1E1E1E] shadow-[3px_3px_0px_0px_#1E1E1E] hover:bg-emerald-400 transition active:translate-y-1 active:shadow-none mt-4 disabled:opacity-50">
+                {profileLoading ? "MENYIMPAN..." : "SIMPAN PERUBAHAN"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LAINNYA */}
       {showTargetEduModal && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl p-6 shadow-[8px_8px_0px_0px_#000] animate-in zoom-in-95">
@@ -424,7 +514,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         </div>
       )}
 
-      {/* MODAL FORM BUAT TARGET BARU */}
       {showTargetFormModal && (
         <div className="fixed inset-0 bg-black/70 z-[1000] flex items-end sm:items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[8px_8px_0px_0px_#000] animate-in slide-in-from-bottom-8">
@@ -578,9 +667,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL FORM MANAJEMEN KATEGORI BARU */}
-      {/* ========================================== */}
       {isCategoryModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-[#F8F5F2] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[6px_6px_0px_0px_#1E1E1E] space-y-4 animate-in slide-in-from-bottom-8">

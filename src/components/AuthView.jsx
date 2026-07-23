@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Lock, Mail, ArrowRight, BookMarked, AlertCircle, CheckCircle2, User, RefreshCcw } from "lucide-react";
+import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, User, RefreshCcw } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 export default function AuthView({ isRecovery, onRecoveryComplete }) {
@@ -166,9 +166,12 @@ export default function AuthView({ isRecovery, onRecoveryComplete }) {
       <div className="w-full max-w-sm bg-[#FDFBF7] border-8 border-[#1E1E1E] rounded-[32px] p-6 sm:p-8 shadow-[12px_12px_0px_0px_#1E1E1E] animate-in slide-in-from-bottom-4">
         
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-emerald-500 rounded-2xl border-4 border-[#1E1E1E] flex items-center justify-center mx-auto mb-4 shadow-[4px_4px_0px_0px_#1E1E1E]">
-            <BookMarked size={32} className="text-[#1E1E1E]" />
-          </div>
+          {/* LOGO BARU BUKU SAKU */}
+          <img 
+            src="/pwa-512x512.png" 
+            alt="Logo Buku Saku" 
+            className="w-16 h-16 mx-auto mb-4 rounded-2xl border-4 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] object-cover"
+          />
           <h1 className="text-2xl font-black tracking-wider text-[#1E1E1E]">BUKU SAKU</h1>
           <p className="text-[9px] font-black text-stone-500 tracking-[0.2em] uppercase mt-2">Asisten Finansial Pintar</p>
         </div>
@@ -249,7 +252,7 @@ export default function AuthView({ isRecovery, onRecoveryComplete }) {
               <label className="text-[10px] font-black text-stone-600 uppercase pl-1">Nama Lengkap</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><User size={16} className="text-stone-400" /></div>
-                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Misal: Budi Santoso" className="w-full pl-11 pr-4 py-3.5 text-xs border-4 border-[#1E1E1E] rounded-2xl font-bold bg-white outline-none focus:border-emerald-500 transition uppercase" required />
+                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Budi Santoso" className="w-full pl-11 pr-4 py-3.5 text-xs border-4 border-[#1E1E1E] rounded-2xl font-bold bg-white outline-none focus:border-emerald-500 transition uppercase" required />
               </div>
             </div>
 

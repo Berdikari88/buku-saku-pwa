@@ -148,7 +148,7 @@ export default function App() {
       <div className="w-full max-w-md h-screen sm:h-[844px] sm:rounded-[40px] sm:border-8 sm:border-[#1E1E1E] bg-[#F8F5F2] flex flex-col relative overflow-hidden sm:shadow-[12px_12px_0px_0px_#1E1E1E]">
         
         <div className="bg-[#F8F5F2] px-6 pt-4 pb-2 flex justify-between items-center text-[10px] font-black font-mono text-[#666666] border-b-2 border-[#1E1E1E]">
-          <span>BUKU SAKU GENERASI PWA</span>
+          <span>Asisten Finansial Pintar</span>
           <span className="bg-emerald-500 w-2 h-2 rounded-full animate-pulse"></span>
         </div>
 

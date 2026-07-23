@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, Calendar, Briefcase, Target, ArrowRight, Sparkles } from "lucide-react";
+import { User, Calendar, Briefcase, Target, ArrowRight } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 export default function OnboardingView({ session, onComplete }) {
@@ -55,9 +55,12 @@ export default function OnboardingView({ session, onComplete }) {
       <div className="w-full max-w-md bg-[#FDFBF7] border-8 border-[#1E1E1E] rounded-[32px] p-6 sm:p-8 shadow-[12px_12px_0px_0px_#1E1E1E] animate-in slide-in-from-bottom-4">
         
         <div className="mb-8 text-center space-y-2">
-          <div className="w-14 h-14 bg-indigo-400 border-4 border-[#1E1E1E] rounded-2xl flex items-center justify-center shadow-[4px_4px_0px_0px_#1E1E1E] mx-auto mb-4">
-            <Sparkles size={28} className="text-[#1E1E1E]" />
-          </div>
+          {/* LOGO BARU BUKU SAKU */}
+          <img 
+            src="/pwa-512x512.png" 
+            alt="Logo Buku Saku" 
+            className="w-16 h-16 rounded-2xl border-4 border-[#1E1E1E] mx-auto mb-4 shadow-[4px_4px_0px_0px_#1E1E1E] object-cover"
+          />
           <h1 className="text-2xl font-black tracking-tight leading-tight">Halo! Mari berkenalan.</h1>
           <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest leading-relaxed">Bantu AI memahami profilmu untuk rekomendasi yang lebih tajam.</p>
         </div>
