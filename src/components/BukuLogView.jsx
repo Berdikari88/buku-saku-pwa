@@ -38,6 +38,11 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
   const [claimEndDate, setClaimEndDate] = useState("");
 
   // =======================================================
+  // STATE BARU: BATAS TAMPILAN (LOAD MORE LOGIC)
+  // =======================================================
+  const [visibleTxCount, setVisibleTxCount] = useState(30);
+
+  // =======================================================
   // PENERIMA SINYAL DARI BERANDA (AUTO-NAVIGASI TAB KLAIM)
   // =======================================================
   useEffect(() => {
@@ -47,6 +52,11 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
       localStorage.removeItem("targetBukuLogTab"); // Bersihkan sinyal setelah dibaca
     }
   }, []);
+
+  // KEMBALIKAN BATAS TAMPILAN KE 30 JIKA FILTER/PENCARIAN BERUBAH
+  useEffect(() => {
+    setVisibleTxCount(30);
+  }, [searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
 
   const unmaskNumber = (str) => parseInt(str.toString().replace(/\./g, ""), 10) || 0;
   const maskRupiah = (val) => { const clean = val.toString().replace(/[^0-9]/g, ""); return clean ? new Intl.NumberFormat("id-ID").format(parseInt(clean, 10)) : ""; };
@@ -62,7 +72,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
     return cat; 
   };
 
-  // 1. DATA FILTERING MUTASI
+  // 1. DATA FILTERING MUTASI (MURNI, TIDAK DIPOTONG UNTUK CHART & AI)
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       // Pencarian Kata Kunci
@@ -86,13 +96,16 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
     });
   }, [transactions, searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
 
+  // POTONG DATA HANYA UNTUK DITAMPILKAN DI LAYAR AGAR RINGAN (UI RENDER)
+  const displayedTransactions = filteredTransactions.slice(0, visibleTxCount);
+
   // List kategori dinamis untuk dropdown filter
   const availableCategories = useMemo(() => {
     const expenseTxs = transactions.filter(t => t.type === 'EXPENSE');
     return Array.from(new Set(expenseTxs.map(t => t.category))).filter(Boolean);
   }, [transactions]);
 
-  // 2. DONUT CHART LOGIC
+  // 2. DONUT CHART LOGIC (MENGGUNAKAN SELURUH DATA FILTERED, BUKAN DISPLAYED)
   const expenseDistribution = useMemo(() => {
     const expenseTx = filteredTransactions.filter(t => t.type === "EXPENSE");
     const categoriesMap = {};
@@ -415,14 +428,16 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                 </div>
               )}
               
-              {/* DAFTAR TRANSAKSI MUTASI */}
+              {/* DAFTAR TRANSAKSI MUTASI DENGAN LIMIT & LOAD MORE */}
               <div className="space-y-2 mt-2">
                 {filteredTransactions.length === 0 && (
                   <div className="text-center py-8 border-2 border-dashed border-stone-300 rounded-xl bg-stone-50">
                     <p className="text-xs font-bold text-stone-500">Tidak ada transaksi yang cocok dengan filter/pencarian.</p>
                   </div>
                 )}
-                {filteredTransactions.map(t => (
+                
+                {/* MAPPING DATA YANG SUDAH DIPOTONG (DISPLAYED TRANSACTIONS) */}
+                {displayedTransactions.map(t => (
                   <div key={t.id} className="bg-white border-2 border-[#1E1E1E] p-3 rounded-xl flex justify-between items-center shadow-[2px_2px_0px_0px_#1E1E1E]">
                     <div className="flex items-center gap-3">
                       <span className={`w-8 h-8 flex justify-center items-center rounded-lg border-2 font-black shrink-0 ${t.type === 'EXPENSE' ? 'bg-rose-50 text-rose-600 border-rose-300' : t.type === 'INCOME' ? 'bg-emerald-50 text-emerald-600 border-emerald-300' : 'bg-indigo-50 text-indigo-600 border-indigo-300'}`}>
@@ -438,6 +453,17 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                     </span>
                   </div>
                 ))}
+
+                {/* TOMBOL LOAD MORE (HANYA MUNCUL JIKA MASIH ADA SISA DATA) */}
+                {visibleTxCount < filteredTransactions.length && (
+                  <button 
+                    onClick={() => setVisibleTxCount(prev => prev + 30)}
+                    className="w-full mt-4 min-h-[44px] bg-amber-300 text-amber-950 font-black text-[10px] uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[3px_3px_0px_0px_#1E1E1E] active:translate-y-1 active:shadow-none hover:bg-amber-400 transition cursor-pointer"
+                  >
+                    Lebih Banyak ({filteredTransactions.length - visibleTxCount} Tersisa)
+                  </button>
+                )}
+
               </div>
             </div>
           </div>

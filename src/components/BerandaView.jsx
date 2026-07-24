@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Sparkles, Flame, BookOpen, Briefcase, History, ChevronRight, X, Wallet, CreditCard, Smartphone, ChevronDown, Target, Zap, TrendingUp, CheckCircle2, AlertCircle, Info, ArrowRight } from "lucide-react";
+import { Sparkles, Flame, BookOpen, Briefcase, History, ChevronRight, X, Wallet, CreditCard, Smartphone, ChevronDown, Target, Zap, TrendingUp, CheckCircle2, AlertCircle, Info, ArrowRight, PieChart } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 export default function BerandaView({ accounts = [], transactions = [], missions = [], savingsTargets = [], fetchData, session, setActiveTab }) {
@@ -18,6 +18,14 @@ export default function BerandaView({ accounts = [], transactions = [], missions
   const [ccPayAmount, setCcPayAmount] = useState("");
   const [ccPaySource, setCcPaySource] = useState("");
 
+  // ==========================================
+  // STATE NOTIFIKASI & RAPOR INSTAN
+  // ==========================================
+  const [showReportNotif, setShowReportNotif] = useState(false);
+  const [lastMonthVal, setLastMonthVal] = useState("");
+  const [isReportPreviewOpen, setIsReportPreviewOpen] = useState(false);
+  const [reportData, setReportData] = useState(null);
+
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
   const toastTimeout = useRef(null);
 
@@ -30,8 +38,68 @@ export default function BerandaView({ accounts = [], transactions = [], missions
   };
 
   useEffect(() => {
+    // 1. LOGIKA RANJAU NOTIFIKASI (ANTI HALU)
+    if (!transactions || transactions.length === 0) return;
+
+    const now = new Date();
+    let prevM = now.getMonth(); // 0-11
+    let prevY = now.getFullYear();
+    
+    // Jika bulan ini Januari, maka bulan lalu adalah Desember tahun sebelumnya
+    if (prevM === 0) {
+      prevM = 12;
+      prevY -= 1;
+    }
+    
+    const prevMonthString = `${prevY}-${String(prevM).padStart(2, '0')}`;
+    setLastMonthVal(prevMonthString);
+
+    // CEK 1: Apakah user sudah melihatnya?
+    const lastSeen = localStorage.getItem('last_report_seen');
+    // CEK 2: APAKAH ADA TRANSAKSI DI BULAN ITU? (Jangan muncul jika kosong)
+    const hasData = transactions.some(t => t.date && t.date.startsWith(prevMonthString));
+
+    if (lastSeen !== prevMonthString && hasData) {
+      setShowReportNotif(true);
+    }
+
     return () => { if (toastTimeout.current) clearTimeout(toastTimeout.current); };
-  }, []);
+  }, [transactions]);
+
+  // FUNGSI AKSI NOTIFIKASI RAPOR
+  const dismissReportNotif = () => {
+    localStorage.setItem('last_report_seen', lastMonthVal);
+    setShowReportNotif(false);
+  };
+
+  const handleOpenReportFromNotif = () => {
+    try {
+      const monthTx = transactions.filter(t => t.date && t.date.startsWith(lastMonthVal));
+      const income = monthTx.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + Number(t.amount), 0);
+      const expense = monthTx.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + Number(t.amount), 0);
+      const ratio = income > 0 ? Math.min((expense / income) * 100, 100) : (expense > 0 ? 100 : 0);
+
+      const catMap = {};
+      monthTx.filter(t => t.type === 'EXPENSE').forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + Number(t.amount); });
+      const topCats = Object.entries(catMap).map(([name, amount]) => ({ name, amount })).sort((a,b) => b.amount - a.amount).slice(0, 5);
+
+      let currentPct = 0;
+      const colors = ['#E11D48', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6'];
+      const gradientParts = topCats.map((c, i) => {
+        const pct = expense > 0 ? (c.amount / expense) * 100 : 0;
+        const part = `${colors[i]} ${currentPct}% ${currentPct + pct}%`;
+        currentPct += pct;
+        return part;
+      }).join(', ');
+      const conicGradient = gradientParts ? `conic-gradient(${gradientParts})` : 'conic-gradient(#e5e7eb 0% 100%)';
+
+      setReportData({ month: lastMonthVal, income, expense, ratio, topCats, colors, conicGradient });
+      setIsReportPreviewOpen(true);
+      dismissReportNotif(); // Tutup banner karena sudah dibuka
+    } catch (error) {
+      showToast("Gagal memuat rapor.", "error");
+    }
+  };
 
   const formatRp = (value) => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value || 0);
@@ -56,7 +124,6 @@ export default function BerandaView({ accounts = [], transactions = [], missions
   const ewalletUsaha = accounts.filter(a => isUsaha(a) && a.type?.toLowerCase() === "ewallet");
   const ccUsaha = accounts.filter(a => isUsaha(a) && a.type?.toLowerCase() === "cc");
 
-  // Filter akun sumber dana (selain CC) untuk pilihan bayar tagihan
   const paymentSources = accounts.filter(a => a.type?.toLowerCase() !== "cc");
 
   const sumBalance = (arr) => arr.reduce((sum, acc) => sum + Number(acc.balance || 0), 0);
@@ -86,7 +153,6 @@ export default function BerandaView({ accounts = [], transactions = [], missions
   const totalTalanganPribadi = klaimExpense - klaimIncome;
   const finalTalangan = totalTalanganPribadi > 0 ? totalTalanganPribadi : 0;
 
-  // Logika Notifikasi CC
   const todayDay = new Date().getDate();
   const dueCreditCards = [...ccPribadi, ...ccUsaha].filter(cc => {
     if (!cc.statement_date || !cc.due_date || cc.balance >= 0) return false;
@@ -133,43 +199,33 @@ export default function BerandaView({ accounts = [], transactions = [], missions
     }
   };
 
-  // ==========================================
-  // LOGIKA PEMBAYARAN KARTU KREDIT (AUTO-SPLIT)
-  // ==========================================
   const handlePayCreditCard = async (e) => {
     e.preventDefault();
     if (!ccPayAmount || !ccPaySource || !ccPayModal) return;
     
     setIsUpdating(true);
     try {
-      const amountPaid = parseFloat(ccPayAmount.replace(/\./g, "")); // Total uang keluar (termasuk admin)
+      const amountPaid = parseFloat(ccPayAmount.replace(/\./g, "")); 
       const sourceAcc = accounts.find(a => a.id === ccPaySource);
-      
-      // Saldo CC itu nilainya minus, jadi Math.abs() untuk mendapatkan nominal utang aslinya
       const currentDebt = Math.abs(Number(ccPayModal.balance)); 
 
       let debtCleared = 0;
       let adminFee = 0;
 
-      // Logika Pemecah (Split)
       if (amountPaid > currentDebt) {
-        debtCleared = currentDebt; // Utang lunas maksimal
-        adminFee = amountPaid - currentDebt; // Sisa uang keluar dianggap biaya admin bank
+        debtCleared = currentDebt; 
+        adminFee = amountPaid - currentDebt; 
       } else {
-        debtCleared = amountPaid; // Cuma bayar minimum/sebagian, tidak ada admin yang terdeteksi
+        debtCleared = amountPaid; 
         adminFee = 0;
       }
 
-      // 1. Potong uang dari rekening sumber secara utuh
       const newSourceBalance = Number(sourceAcc.balance) - amountPaid;
       await supabase.from('accounts').update({ balance: newSourceBalance }).eq('id', sourceAcc.id);
 
-      // 2. Pulihkan sisa limit CC (kurangi utangnya)
-      // Karena balance CC adalah negatif, ditambah (+) berarti utangnya berkurang
       const newCcBalance = Number(ccPayModal.balance) + debtCleared;
       await supabase.from('accounts').update({ balance: newCcBalance }).eq('id', ccPayModal.id);
 
-      // 3. Catat transaksi Pengeluaran (Uang Keluar) di Buku Log
       let titleTx = `Bayar Tagihan ${ccPayModal.name}`;
       if (adminFee > 0) {
         titleTx += ` (Termasuk Biaya Admin: Rp ${adminFee.toLocaleString('id-ID')})`;
@@ -185,14 +241,14 @@ export default function BerandaView({ accounts = [], transactions = [], missions
         date: new Date().toISOString().split('T')[0]
       }]);
 
-      showToast(`Pembayaran Rp ${amountPaid.toLocaleString('id-ID')} berhasil! Limit kartu telah disesuaikan.`, "success");
+      showToast(`Pembayaran Rp ${amountPaid.toLocaleString('id-ID')} berhasil! Limit disesuaikan.`, "success");
       setCcPayModal(null);
       setCcPayAmount("");
       setCcPaySource("");
       if (fetchData) fetchData();
 
     } catch (err) {
-      showToast("Gagal memproses pembayaran CC: " + err.message, "error");
+      showToast("Gagal memproses pembayaran: " + err.message, "error");
     } finally {
       setIsUpdating(false);
     }
@@ -228,6 +284,32 @@ export default function BerandaView({ accounts = [], transactions = [], missions
             <span className={`text-[10px] font-black tracking-wide whitespace-nowrap ${toast.type === 'success' ? 'text-emerald-900' : toast.type === 'error' ? 'text-rose-900' : 'text-sky-900'}`}>
               {toast.message}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* BANNER NOTIFIKASI RAPOR (KALCER & NEO-BRUTALISM) */}
+      {/* ========================================== */}
+      {showReportNotif && (
+        <div className="bg-purple-100 border-4 border-purple-500 p-5 rounded-3xl shadow-[4px_4px_0px_0px_#9333EA] animate-in slide-in-from-top-4 relative overflow-hidden mb-2">
+          <div className="absolute top-[-20px] right-[-20px] opacity-20"><Sparkles size={120} className="text-purple-600 animate-pulse"/></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl drop-shadow-md">🎉</span>
+              <h3 className="text-sm font-black text-purple-900 uppercase tracking-widest">Woy Bosku!</h3>
+            </div>
+            <p className="text-xs font-bold text-purple-800 leading-relaxed mb-5 pr-4">
+              Rapor Finansial bulan lalu <span className="font-black underline bg-purple-200 px-1 rounded">({lastMonthVal})</span> udah terbit nih! Udah siap lihat seberapa kalcer arus kasmu?
+            </p>
+            <div className="flex gap-3">
+              <button onClick={handleOpenReportFromNotif} className="flex-1 bg-purple-500 text-white text-[10px] font-black uppercase py-3 rounded-xl border-2 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E] hover:bg-purple-400 active:translate-y-px active:shadow-none transition flex justify-center items-center gap-1">
+                <Flame size={14} /> LIHAT RAPOR
+              </button>
+              <button onClick={dismissReportNotif} className="flex-1 bg-white text-purple-900 text-[10px] font-black uppercase py-3 rounded-xl border-2 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E] hover:bg-stone-100 active:translate-y-px active:shadow-none transition">
+                NANTI AJA
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -476,7 +558,6 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                           <div className="text-right"><p className="text-[9px] font-black text-stone-500 uppercase">Sisa Limit</p><p className="text-sm font-black text-emerald-600">{formatRp(Number(acc.credit_limit) + Number(acc.balance))}</p></div>
                         </div>
                         
-                        {/* TOMBOL BAYAR TAGIHAN -> SEKARANG MEMBUKA MODAL FORM CC */}
                         <button onClick={() => { setDetailModal(null); setCcPayModal(acc); }} className="w-full mt-4 bg-rose-50 hover:bg-rose-100 text-rose-600 border-2 border-rose-500 font-black text-[10px] uppercase py-2.5 rounded-xl transition active:scale-95 flex items-center justify-center gap-1.5">
                           Bayar Tagihan
                         </button>
@@ -491,6 +572,78 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                   }
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL LAYAR RAPOR INTERAKTIF (UX INSTAN DI BERANDA) */}
+      {/* ========================================== */}
+      {isReportPreviewOpen && reportData && (
+        <div className="fixed inset-0 bg-black/80 z-[1000] flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in">
+          <div className="w-full max-w-sm bg-[#FDFBF7] sm:border-4 border-[#1E1E1E] sm:rounded-3xl h-[90vh] sm:h-[85vh] shadow-[0px_-8px_0px_0px_#000] sm:shadow-[8px_8px_0px_0px_#000] flex flex-col overflow-hidden animate-in slide-in-from-bottom-8 rounded-t-3xl relative">
+            
+            {/* STICKY HEADER */}
+            <div className="bg-[#FDFBF7] border-b-4 border-[#1E1E1E] p-4 flex justify-between items-center z-10 shrink-0">
+              <div>
+                <h2 className="text-lg font-black uppercase">Rapor Finansial</h2>
+                <p className="text-[10px] font-bold text-stone-500 uppercase">Periode: {reportData.month}</p>
+              </div>
+              <button onClick={() => setIsReportPreviewOpen(false)} className="w-10 h-10 bg-rose-100 hover:bg-rose-200 border-2 border-[#1E1E1E] rounded-xl flex items-center justify-center transition active:scale-95"><X size={20} className="text-rose-600" /></button>
+            </div>
+
+            {/* SCROLLABLE BODY */}
+            <div className="p-5 space-y-6 overflow-y-auto flex-1 pb-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="border-2 border-[#1E1E1E] p-4 rounded-2xl bg-emerald-50 shadow-[4px_4px_0px_0px_#1E1E1E]">
+                  <h3 className="text-[10px] font-black text-emerald-800 uppercase mb-1">Uang Masuk</h3>
+                  <p className="text-sm font-black text-emerald-600 truncate">Rp {formatRp(reportData.income)}</p>
+                </div>
+                <div className="border-2 border-[#1E1E1E] p-4 rounded-2xl bg-rose-50 shadow-[4px_4px_0px_0px_#1E1E1E]">
+                  <h3 className="text-[10px] font-black text-rose-800 uppercase mb-1">Uang Keluar</h3>
+                  <p className="text-sm font-black text-rose-600 truncate">Rp {formatRp(reportData.expense)}</p>
+                </div>
+              </div>
+
+              {/* BAR PEMASUKAN */}
+              <div className="border-2 border-[#1E1E1E] p-5 rounded-2xl bg-white shadow-[4px_4px_0px_0px_#1E1E1E]">
+                <h3 className="text-xs font-black uppercase mb-3 flex items-center gap-2"><Zap size={16} className="text-amber-500"/> Bar Pemasukan</h3>
+                <div className="w-full h-6 border-2 border-[#1E1E1E] rounded-full overflow-hidden flex bg-emerald-100">
+                  <div style={{ width: `${reportData.ratio}%` }} className="bg-rose-500 h-full border-r-2 border-[#1E1E1E] transition-all duration-1000 ease-out"></div>
+                </div>
+                <p className="font-bold text-[10px] mt-2 text-stone-500">Pengeluaran memakan <span className="font-black text-rose-600">{reportData.ratio.toFixed(1)}%</span> dari Pemasukan.</p>
+              </div>
+
+              <div className="border-2 border-amber-400 p-5 rounded-2xl bg-[#FFFBEB] shadow-[4px_4px_0px_0px_#F59E0B]">
+                <h3 className="text-xs font-black text-amber-800 uppercase mb-2 flex items-center gap-2"><Sparkles size={16}/> Insight Kilat</h3>
+                <p className="font-bold text-xs leading-relaxed text-amber-900">Ini adalah ringkasan cepat pengeluaranmu. Kunjungi <span className="font-black text-amber-950 bg-amber-200 px-1">Menu Settings</span> untuk mengunduh versi PDF/CSV Lengkap dan membaca saran dari Pelatih AI.</p>
+              </div>
+
+              <div className="border-2 border-[#1E1E1E] p-5 rounded-2xl bg-white shadow-[4px_4px_0px_0px_#1E1E1E]">
+                <h3 className="text-xs font-black uppercase mb-4 text-center">Top 5 Bocor Halus</h3>
+                <div className="flex justify-center mb-5">
+                  <div className="w-32 h-32 rounded-full border-2 border-[#1E1E1E] relative" style={{ background: reportData.conicGradient }}>
+                    <div className="absolute inset-0 m-auto w-16 h-16 bg-white border-2 border-[#1E1E1E] rounded-full"></div>
+                  </div>
+                </div>
+                <ul className="space-y-3">
+                  {reportData.topCats.map((c, i) => (
+                    <li key={i} className="flex justify-between items-center font-bold text-[10px] border-b border-stone-100 pb-2">
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full border border-[#1E1E1E]" style={{backgroundColor: reportData.colors[i]}}></div> {c.name}</span>
+                      <span>Rp {formatRp(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="pt-2 border-t-2 border-dashed border-stone-300">
+                <button onClick={() => { setIsReportPreviewOpen(false); if(setActiveTab) setActiveTab("settings"); }} className="w-full mt-4 bg-[#1E1E1E] text-white font-black text-xs uppercase py-4 rounded-xl border-4 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#444] hover:bg-stone-800 transition active:translate-y-1 active:shadow-none flex items-center justify-center gap-2">
+                  PusAT LAPORAN (PDF/CSV) <ChevronRight size={16} />
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
@@ -530,9 +683,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL FORM PEMBAYARAN CC PINTAR (BARU)       */}
-      {/* ========================================== */}
+      {/* MODAL FORM PEMBAYARAN CC PINTAR */}
       {ccPayModal && (
         <div className="fixed inset-0 bg-black/70 z-[1000] flex items-end sm:items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[8px_8px_0px_0px_#000] animate-in slide-in-from-bottom-8">

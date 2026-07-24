@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Camera, X, CheckCircle, Sparkles, ChevronDown, ArrowRightLeft, Trash2 } from "lucide-react";
+import { Send, Camera, X, CheckCircle, Sparkles, ChevronDown, ArrowRightLeft, Trash2, Repeat } from "lucide-react";
 import { supabase } from "../supabaseClient"; 
 
 // ============================================================================
@@ -83,8 +83,7 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
 });
 
 export default function AiChatView({ session, fetchData, chatHistory, setChatHistory, transactions, setTransactions, accounts, setAccounts }) {
-  // State Tab Aktif
-  const [activeTab, setActiveTab] = useState("chat"); // 'chat' atau 'manual'
+  const [activeTab, setActiveTab] = useState("chat");
 
   const [chatInputText, setChatInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -97,20 +96,38 @@ export default function AiChatView({ session, fetchData, chatHistory, setChatHis
 
   const [aiProposedMission, setAiProposedMission] = useState(null);
 
+  const [dbCategories, setDbCategories] = useState(["Lain-lain"]);
+
   const [qiType, setQiType] = useState("EXPENSE"); 
   const [qiAmount, setQiAmount] = useState(0);
   const [qiTitle, setQiTitle] = useState(""); 
   const [qiAccount, setQiAccount] = useState(accounts[0]?.id || "");
   const [qiAccountTo, setQiAccountTo] = useState(accounts[1]?.id || ""); 
-  const [qiCategory, setQiCategory] = useState("Makan & Minum");
+  const [qiCategory, setQiCategory] = useState("Lain-lain");
   const [qiPurpose, setQiPurpose] = useState("PRIBADI"); 
+  const [qiIsRecurring, setQiIsRecurring] = useState(false);
   
   const [activeDropdown, setActiveDropdown] = useState(null); 
   const dropdownRef = useRef(null);
   const chatContainerRef = useRef(null);
-
-  // STATE MODAL HAPUS CHAT (MENGGANTIKAN DIALOG BROWSER)
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
+
+  useEffect(() => {
+    async function loadCategories() {
+      try {
+        const { data, error } = await supabase.from('categories').select('name');
+        if (error) throw error;
+        if (data && data.length > 0) {
+          const catNames = data.map(c => c.name);
+          setDbCategories(catNames);
+          setQiCategory(catNames[0]);
+        }
+      } catch (err) {
+        console.error("Gagal memuat kategori dari Supabase:", err);
+      }
+    }
+    loadCategories();
+  }, []);
 
   useEffect(() => {
     const cachedChat = localStorage.getItem(`bukusaku_chat_${session?.user?.id || 'anon'}`);
@@ -130,7 +147,6 @@ export default function AiChatView({ session, fetchData, chatHistory, setChatHis
     localStorage.setItem(`bukusaku_chat_${session?.user?.id || 'anon'}`, JSON.stringify(newHistory));
   };
 
-  // EKSEKUSI BERSIHKAN MEMORI CHAT (TANPA DIALOG BROWSER)
   const executeClearChat = () => {
     setChatHistory([]);
     localStorage.removeItem(`bukusaku_chat_${session?.user?.id || 'anon'}`);
@@ -239,16 +255,51 @@ export default function AiChatView({ session, fetchData, chatHistory, setChatHis
 
     executeAddTransaction(finalTitle, qiAmount.toString(), qiType, qiAccount, qiPurpose === "REIMBURSE", qiType === "TRANSFER" ? "Transfer" : qiCategory, receiptData, qiType === "TRANSFER" ? qiAccountTo : null);
 
+    if (qiIsRecurring) {
+      try {
+        let activeSession = session;
+        if (!activeSession) {
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          activeSession = currentSession;
+        }
+        
+        const nextDate = new Date();
+        nextDate.setMonth(nextDate.getMonth() + 1);
+        const nextRunDateStr = nextDate.toISOString().split("T")[0];
+
+        const { error: recErr } = await supabase.from('recurring_transactions').insert({
+          user_id: activeSession.user.id,
+          title: finalTitle,
+          amount: qiAmount,
+          type: qiType,
+          category: qiType === "TRANSFER" ? "Transfer" : qiCategory,
+          account_id: qiAccount,
+          next_run_date: nextRunDateStr,
+          status: 'ACTIVE'
+        });
+
+        if (recErr) {
+          console.error("Gagal simpan rutinitas (manual):", recErr);
+          alert("Gagal menyinkronkan tagihan rutin ke database: " + recErr.message);
+        }
+      } catch (err) {
+        console.error("Kesalahan sistem:", err);
+      }
+    }
+
     const userMsg = qiType === "TRANSFER" ? `Pindahkan Rp${maskRupiah(qiAmount)} dari ${accounts.find(a => a.id === qiAccount)?.name} ke ${accounts.find(a => a.id === qiAccountTo)?.name}` : `Catat manual: ${finalTitle} Rp${maskRupiah(qiAmount)}`;
-    const aiMsg = qiType === "TRANSFER" ? `✨ Siap Bosku! Mutasi dana udah aku amankan.` : `✨ Siap Bosku! ${finalTitle} sebesar ${formatRp(qiAmount)} udah berhasil dicatat.`;
+    
+    let aiMsg = qiType === "TRANSFER" ? `✨ Siap Bosku! Mutasi dana udah aku amankan.` : `✨ Siap Bosku! ${finalTitle} sebesar ${formatRp(qiAmount)} udah berhasil dicatat.`;
+    if (qiIsRecurring) {
+      aiMsg += ` Oh ya, tagihan ini udah aku daftarkan buat ditagih otomatis setiap bulan ya! 🔄`;
+    }
 
     saveChatToLocal([...chatHistory, 
       { id: `msg-${Date.now()}`, sender: "user", text: userMsg, timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) },
       { id: `msg-${Date.now()+1}`, sender: "ai", text: aiMsg, timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }
     ]);
     
-    setQiAmount(0); setQiTitle(""); setQiReceiptFile(null); setQiReceiptPreview(""); 
-    
+    setQiAmount(0); setQiTitle(""); setQiReceiptFile(null); setQiReceiptPreview(""); setQiIsRecurring(false);
     setActiveTab("chat");
   };
 
@@ -270,33 +321,44 @@ export default function AiChatView({ session, fetchData, chatHistory, setChatHis
         return;
       }
 
-      // PERBAIKAN LOGIKA AI: Menyertakan [PRIBADI] atau [USAHA] pada daftar dompet
       const accountsFormatted = accounts.map(a => {
         const group = (a.account_group || 'PRIBADI').toUpperCase();
-        return `- ${a.name} (ID: ${a.id}) [GRUP: ${group}]`;
+        return `- ${a.name} (ID UUID: ${a.id}) [GRUP: ${group}]`;
       }).join('\n');
 
+      const contextHistory = chatHistory.slice(-4).map(m => `${m.sender === 'user' ? 'Pengguna' : 'AI'}: ${m.text}`).join('\n');
+      
+      const categoriesFormatted = dbCategories.join(', ');
+
       const prompt = `Anda asisten keuangan cerdas.
-Daftar rekening pengguna saat ini:
+Daftar rekening pengguna:
 ${accountsFormatted}
 
-Pesan pengguna: "${currentInput}"
+Daftar Kategori yang tersedia di database:
+[${categoriesFormatted}]
 
-ATURAN PILIH REKENING (SANGAT KETAT):
-1. Jika pengguna menyebutkan kata/konteks "USAHA", "BISNIS", "MODAL", "BAHAN", "SUPPLIER", atau "OPERASIONAL", Anda WAJIB memilih account_id dari rekening yang berstatus [GRUP: USAHA]. HARAM menggunakan rekening [GRUP: PRIBADI]!
-2. Jika pengguna menyebutkan kata/konteks "PRIBADI", "JAJAN", "KELUARGA", "RUMAH", atau tanpa keterangan usaha, pilihlah rekening [GRUP: PRIBADI].
-3. Jika pengguna menyebut kata generik seperti "bank" atau "cash", cocokkan dengan grup usaha/pribadi berdasarkan pesan pengguna terlebih dahulu!
+Riwayat (Ingatan):
+${contextHistory}
 
-BALAS HANYA JSON MURNI (Mulai dari {). Format:
+Pesan baru: "${currentInput}"
+
+ATURAN KETAT (BACA HATI-HATI):
+1. JANGAN PERNAH set "is_transaction": true JIKA nominal angka (amount) BELUM PASTI! Tanya dulu nominalnya.
+2. Jika pengguna menyebut nominal di pesan terbaru, GABUNGKAN dengan konteks riwayat sebelumnya.
+3. "account_id" WAJIB diisi persis dengan (ID UUID) dari daftar di atas.
+4. "category" WAJIB diisi dengan SATU nama kategori yang paling cocok HANYA DARI DAFTAR KATEGORI DI ATAS. PENTING: Jika pengguna mengetik kata atau singkatan yang persis sama dengan nama kategori di daftar (misal: "KOPAG"), ANDA WAJIB memilih kategori "KOPAG"! Jangan diubah ke kategori lain.
+
+BALAS JSON MURNI:
 { 
-  "is_transaction": true, 
+  "is_transaction": true/false, 
   "title": "Judul Transaksi Singkat", 
-  "amount": 10000, 
+  "amount": angka_murni_tanpa_titik (contoh: 50000. Jika belum ada isi 0), 
   "type": "EXPENSE", 
-  "account_id": "ID akun yang sesuai aturan di atas", 
-  "category": "Kategori", 
+  "account_id": "Kode UUID Dompet", 
+  "category": "Pilih SATU dari daftar kategori", 
   "is_reimburse": false, 
-  "reply_message": "Balasan konfirmasi ramah nan asik (Sapa Bosku)", 
+  "is_recurring": true/false,
+  "reply_message": "Balasan asik sapa Bosku", 
   "trigger_mission": null 
 }`;
       
@@ -313,10 +375,76 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
       
       if (data.is_transaction) {
         if (data.is_reimburse) {
-          saveChatToLocal([...historyWithUser, { id: `msg-${Date.now()+1}`, sender: "ai", text: "⚠️ Wah Bosku, pencatatan Klaim via teks aku tolak ya. Pindah ke tab 'Catat Kilat' buat lampirin struk fisiknya!", timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }]);
+          saveChatToLocal([...historyWithUser, { id: `msg-${Date.now()+1}`, sender: "ai", text: "⚠️ Wah Bosku, pencatatan Klaim via teks aku tolak ya. Pindah ke tab 'Sat-Set Manual' buat lampirin struk fisiknya!", timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }]);
           return;
         }
-        executeAddTransaction(data.title, data.amount.toString(), data.type, data.account_id, data.is_reimburse, data.category);
+
+        const cleanAmount = typeof data.amount === 'string' ? parseInt(data.amount.replace(/[^0-9]/g, ""), 10) : (Number(data.amount) || 0);
+        
+        let parsedAccountId = data.account_id;
+        const isIdValid = accounts.some(a => a.id === parsedAccountId);
+        if (!isIdValid) {
+            const fallbackAcc = accounts.find(a => a.name.toLowerCase().includes(String(parsedAccountId).toLowerCase())) || accounts[0];
+            parsedAccountId = fallbackAcc ? fallbackAcc.id : null;
+        }
+        
+        const isRecurringBool = String(data.is_recurring).toLowerCase() === 'true';
+
+        // ==========================================
+        // SABUK PENGAMAN (OVERRIDE KATEGORI)
+        // ==========================================
+        let finalCategory = data.category;
+        
+        // 1. Cek apakah AI menjawab dengan nama yang persis sama tapi beda huruf besar/kecil
+        const matchedCategory = dbCategories.find(c => c.toLowerCase() === String(finalCategory).toLowerCase());
+        
+        // 2. Pembajakan Ekstrem: Cek apakah input chat user mengandung kata dari kategori
+        const forcedCat = dbCategories.find(c => currentInput.toLowerCase().includes(c.toLowerCase()));
+
+        if (forcedCat) {
+          finalCategory = forcedCat; // KOPAG terdeteksi di teks! Paksa pakai KOPAG!
+        } else if (matchedCategory) {
+          finalCategory = matchedCategory; 
+        } else {
+          // Jika ngawur, kembalikan ke default
+          finalCategory = dbCategories.includes("Lain-lain") ? "Lain-lain" : (dbCategories[0] || "Lain-lain");
+        }
+
+        // Eksekusi Catat Normal ke Log
+        executeAddTransaction(data.title, cleanAmount.toString(), data.type, parsedAccountId, data.is_reimburse, finalCategory);
+
+        // Eksekusi Simpan ke Tabel Recurring (Rutinitas)
+        if (isRecurringBool) {
+          try {
+            let activeSession = session;
+            if (!activeSession) {
+              const { data: { session: currentSession } } = await supabase.auth.getSession();
+              activeSession = currentSession;
+            }
+            
+            const nextDate = new Date();
+            nextDate.setMonth(nextDate.getMonth() + 1);
+            const nextRunDateStr = nextDate.toISOString().split("T")[0];
+
+            const { error: recErr } = await supabase.from('recurring_transactions').insert({
+              user_id: activeSession.user.id,
+              title: data.title || "Tagihan Rutin",
+              amount: cleanAmount,
+              type: data.type || "EXPENSE",
+              category: finalCategory,
+              account_id: parsedAccountId,
+              next_run_date: nextRunDateStr,
+              status: 'ACTIVE'
+            });
+
+            if (recErr) {
+              console.error("Gagal simpan tagihan rutin (AI):", recErr);
+              alert("Sistem Gagal Menyimpan Rutinitas Bulanan: " + recErr.message);
+            }
+          } catch (err) {
+            console.error("Error Sistem Rutin:", err);
+          }
+        }
       }
       
       if (data.trigger_mission) setAiProposedMission({ title: data.trigger_mission.title, category: data.trigger_mission.category, keywords: data.trigger_mission.keywords, accepted: false });
@@ -355,6 +483,7 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
 
     try {
       const pureBase64Data = base64Image.split(',')[1];
+      const categoriesFormatted = dbCategories.join(', ');
       
       const prompt = `Anda adalah asisten data keuangan. Pindai gambar struk atau bukti transfer ini.
       Keluarkan HANYA format JSON valid tanpa awalan/akhiran apapun.
@@ -362,7 +491,7 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
       {
         "title": "Nama Toko atau Judul Transaksi Singkat",
         "amount": angka_nominal_tanpa_simbol_dan_titik,
-        "category": "Pilih: Makan & Minum, Transportasi, Belanja Bulanan, Tagihan & Cicilan, Kesehatan, Hiburan & Hobi, Operasional Bisnis, Lain-lain"
+        "category": "Pilih HANYA SATU dari daftar ini: [${categoriesFormatted}]"
       }`;
       
       let rawResponse = await callGeminiDirectly(prompt, pureBase64Data, apiKey);
@@ -378,9 +507,14 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
       setIsTyping(false);
       saveChatToLocal([...initialHistory, { id: `msg-${Date.now()+1}`, sender: "ai", text: "✨ Kertas struk berhasil di-scan Bosku! Cek dulu ya datanya di layar pop-up.", timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }]);
       
+      let finalCategory = data.category;
+      if (!dbCategories.includes(finalCategory)) {
+        finalCategory = dbCategories[0] || "Lain-lain";
+      }
+
       setOcrReviewData({ 
         title: data.title || "Belanja", amount: data.amount ? data.amount.toString() : "0", 
-        accountId: accounts[0]?.id || "", purpose: "PRIBADI", category: data.category || "Lain-lain", fileRef: file 
+        accountId: accounts[0]?.id || "", purpose: "PRIBADI", category: finalCategory, fileRef: file 
       });
       if(e.target) e.target.value = null; 
     } catch (error) {
@@ -409,15 +543,13 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
     setOcrReviewData(null);
   };
 
-  const categories = ["Makan & Minum", "Transportasi", "Belanja Bulanan", "Tagihan & Cicilan", "Kesehatan", "Hiburan & Hobi", "Operasional Bisnis", "Lain-lain"];
-
   return (
     <div className="h-full flex flex-col space-y-3 pt-2 pb-2 min-h-0 w-full overflow-hidden relative">
       
       {/* 1. KOTAK SWITCH TAB */}
       <div className="grid grid-cols-2 p-1 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E] shrink-0 z-20 mx-1">
         <button onClick={() => setActiveTab("chat")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'chat' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>💬 Chat AI</button>
-        <button onClick={() => setActiveTab("manual")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'manual' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>⚡ Catat Kilat</button>
+        <button onClick={() => setActiveTab("manual")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'manual' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>⚡ Sat-Set Manual</button>
       </div>
 
       {/* TAB A: FORM MANUAL */}
@@ -519,7 +651,7 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
                   </button>
                   {activeDropdown === 'category' && (
                     <ul className="absolute z-50 w-full mt-2 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-xl max-h-48 overflow-y-auto animate-in fade-in [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                      {categories.map(cat => (
+                      {dbCategories.map(cat => (
                         <li key={cat} onClick={() => { setQiCategory(cat); setActiveDropdown(null); }} className="p-3 border-b border-stone-100 hover:bg-amber-50 cursor-pointer text-xs font-bold">{cat}</li>
                       ))}
                     </ul>
@@ -528,6 +660,21 @@ BALAS HANYA JSON MURNI (Mulai dari {). Format:
               )}
             </div>
             
+            {/* SAKLAR RUTIN BULANAN */}
+            <div className="flex items-center justify-between p-3 mt-4 bg-stone-100 border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E]">
+              <div className="flex items-center gap-2">
+                <Repeat size={16} className="text-indigo-600" />
+                <span className="text-[10px] font-black uppercase text-stone-600 tracking-wider">Jadikan Tagihan Otomatis</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setQiIsRecurring(!qiIsRecurring)} 
+                className={`w-12 h-6 rounded-full border-2 border-[#1E1E1E] relative transition-colors ${qiIsRecurring ? 'bg-indigo-500' : 'bg-stone-300'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white border-2 border-[#1E1E1E] rounded-full transition-all ${qiIsRecurring ? 'left-6' : 'left-0.5'}`}></div>
+              </button>
+            </div>
+
             <button onClick={handleQuickSubmit} className="w-full min-h-[50px] mt-4 bg-[#1E1E1E] text-white p-3 rounded-xl font-black text-sm uppercase tracking-widest shadow-[4px_4px_0px_0px_#D6D3D1] active:translate-y-1 transition">
               Simpan Transaksi
             </button>
