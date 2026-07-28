@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Sparkles, Archive, X, Printer, Loader2, Search, SlidersHorizontal, Settings2, BrainCircuit, Wallet, Calendar, Tag, FileText } from "lucide-react";
 import { supabase } from "../supabaseClient"; 
 
-export default function BukuLogView({ accounts, setAccounts, transactions, setTransactions, fetchData }) {
+export default function BukuLogView({ accounts = [], setAccounts, transactions = [], setTransactions, fetchData }) {
   const [subTabActivity, setSubTabActivity] = useState("mutasi");
   const [selectedTxForClaim, setSelectedTxForClaim] = useState([]);
   const [claimFolderName, setClaimFolderName] = useState("");
@@ -12,7 +12,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
   
   const [liquidatingClaim, setLiquidatingClaim] = useState(null);
   const [formDisbursedAmount, setFormDisbursedAmount] = useState("");
-  const [formDisbursementAccountId, setFormDisbursementAccountId] = useState(accounts[0]?.id || "");
+  const [formDisbursementAccountId, setFormDisbursementAccountId] = useState("");
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -42,14 +42,22 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
   // =======================================================
   const [visibleTxCount, setVisibleTxCount] = useState(30);
 
-  // =======================================================
+  // FIXED: Auto-select akun default saat accounts selesai dimuat
+  useEffect(() => {
+    if (accounts && accounts.length > 0) {
+      const defaultAcc = accounts.find(a => a.account_group === "PRIBADI" && a.type !== "CREDIT_CARD") || accounts[0];
+      if (defaultAcc && !formDisbursementAccountId) {
+        setFormDisbursementAccountId(defaultAcc.id);
+      }
+    }
+  }, [accounts]);
+
   // PENERIMA SINYAL DARI BERANDA (AUTO-NAVIGASI TAB KLAIM)
-  // =======================================================
   useEffect(() => {
     const targetTab = localStorage.getItem("targetBukuLogTab");
     if (targetTab) {
       setSubTabActivity(targetTab);
-      localStorage.removeItem("targetBukuLogTab"); // Bersihkan sinyal setelah dibaca
+      localStorage.removeItem("targetBukuLogTab");
     }
   }, []);
 
@@ -72,19 +80,13 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
     return cat; 
   };
 
-  // 1. DATA FILTERING MUTASI (MURNI, TIDAK DIPOTONG UNTUK CHART & AI)
+  // 1. DATA FILTERING MUTASI
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      // Pencarian Kata Kunci
       if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      
-      // Filter Tipe Transaksi
       if (filterType !== "Semua" && t.type !== filterType) return false;
-      
-      // Filter Kategori (Berlaku Jika Tipe = EXPENSE)
       if (filterType === "EXPENSE" && filterCategory !== "Semua" && t.category !== filterCategory) return false;
       
-      // Filter Periode
       if (filterPeriod === "Bulan Ini") {
         const currentMonth = new Date().toISOString().slice(0, 7);
         if (t.date && !t.date.startsWith(currentMonth)) return false;
@@ -96,16 +98,14 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
     });
   }, [transactions, searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
 
-  // POTONG DATA HANYA UNTUK DITAMPILKAN DI LAYAR AGAR RINGAN (UI RENDER)
   const displayedTransactions = filteredTransactions.slice(0, visibleTxCount);
 
-  // List kategori dinamis untuk dropdown filter
   const availableCategories = useMemo(() => {
     const expenseTxs = transactions.filter(t => t.type === 'EXPENSE');
     return Array.from(new Set(expenseTxs.map(t => t.category))).filter(Boolean);
   }, [transactions]);
 
-  // 2. DONUT CHART LOGIC (MENGGUNAKAN SELURUH DATA FILTERED, BUKAN DISPLAYED)
+  // 2. DONUT CHART LOGIC
   const expenseDistribution = useMemo(() => {
     const expenseTx = filteredTransactions.filter(t => t.type === "EXPENSE");
     const categoriesMap = {};
@@ -171,7 +171,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
 
   useEffect(() => { loadClaimsFromDB(); }, [transactions]); 
 
-  // LOGIKA FILTER ARSIP LUNAS BERDASARKAN TANGGAL CAIR
   const filteredPaidClaims = useMemo(() => {
     let paid = activeClaims.filter(c => c.status === "PAID");
     
@@ -208,7 +207,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
       if (!session?.user) throw new Error("Sesi login tidak terdeteksi.");
         
       const { error: claimError } = await supabase.from('reimbursement_claims').insert({
-          id: newFolderId, user_id: session.user.id, title: claimFolderName, status: 'PENDING', total_amount: computedTotal
+        id: newFolderId, user_id: session.user.id, title: claimFolderName, status: 'PENDING', total_amount: computedTotal
       });
       if (claimError) throw claimError;
 
@@ -260,7 +259,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
         category: 'Reimbursement Paid', date: currentDateStr, is_reimbursement: false
       });
 
-      let newBalance = accTarget.balance + totalDicairkan;
+      let newBalance = accTarget ? accTarget.balance + totalDicairkan : totalDicairkan;
 
       if (selisih > 0) {
         const expId = generateUUID();
@@ -272,7 +271,9 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
         newBalance -= selisih;
       }
 
-      await supabase.from('accounts').update({ balance: newBalance }).eq('id', formDisbursementAccountId);
+      if (accTarget) {
+        await supabase.from('accounts').update({ balance: newBalance }).eq('id', formDisbursementAccountId);
+      }
 
       if (fetchData) await fetchData();
       await loadClaimsFromDB();
@@ -358,7 +359,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
         {subTabActivity === "mutasi" && (
           <div className="space-y-4 animate-in fade-in">
             
-            {/* 1. ANALISA AI (DI ATAS DENGAN TOMBOL SETTINGS) */}
+            {/* 1. ANALISA AI */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] relative">
               <div className="flex justify-between items-start mb-2">
                 <p className="text-[10px] font-black text-amber-600 tracking-wider uppercase flex items-center gap-1.5">
@@ -371,7 +372,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
               <p className="text-xs text-stone-700 font-bold leading-relaxed">"{computedLogAiCategoryInsight}"</p>
             </div>
 
-            {/* 2. DONUT CHART (DI TENGAH) */}
+            {/* 2. DONUT CHART */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] text-center">
               <p className="text-[10px] font-black text-stone-500 uppercase tracking-wide text-left mb-3 flex items-center gap-1.5"><Sparkles size={12}/> Distribusi Pengeluaran</p>
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
@@ -396,7 +397,7 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
               </div>
             </div>
             
-            {/* 3. PENCARIAN & FILTER BAR (DI BAWAH SEBELUM LIST TRANSAKSI) */}
+            {/* 3. PENCARIAN & FILTER BAR */}
             <div className="space-y-2">
               <p className="text-[10px] font-black text-stone-500 uppercase tracking-wide mb-1 flex items-center gap-1"><Archive size={12}/> Buku Riwayat Lengkap</p>
               
@@ -436,7 +437,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                   </div>
                 )}
                 
-                {/* MAPPING DATA YANG SUDAH DIPOTONG (DISPLAYED TRANSACTIONS) */}
                 {displayedTransactions.map(t => (
                   <div key={t.id} className="bg-white border-2 border-[#1E1E1E] p-3 rounded-xl flex justify-between items-center shadow-[2px_2px_0px_0px_#1E1E1E]">
                     <div className="flex items-center gap-3">
@@ -454,7 +454,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                   </div>
                 ))}
 
-                {/* TOMBOL LOAD MORE (HANYA MUNCUL JIKA MASIH ADA SISA DATA) */}
                 {visibleTxCount < filteredTransactions.length && (
                   <button 
                     onClick={() => setVisibleTxCount(prev => prev + 30)}
@@ -529,7 +528,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                 </p>
               </div>
 
-              {/* FILTER ARSIP LUNAS BERDASARKAN TANGGAL CAIR */}
               <div className="bg-white border-2 border-[#1E1E1E] p-2 rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E] flex flex-col gap-2">
                 <div className="flex gap-2">
                   {['Semua', 'Bulan Ini', 'Kustom'].map(opt => (
@@ -545,7 +543,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                 )}
               </div>
 
-              {/* LIST ARSIP BERDASARKAN FILTER */}
               {filteredPaidClaims.map(c => (
                 <div key={c.id} className="bg-stone-100 border-2 border-[#1E1E1E] p-3 rounded-xl flex justify-between items-center opacity-85 shadow-[1px_1px_0px_0px_#000]">
                   <div>
@@ -577,7 +574,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
             </div>
             
             <div className="space-y-4">
-              {/* Filter Periode Kustom (Maks 1 Bulan) */}
               <div className="space-y-2">
                 <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Calendar size={12}/> Periode Waktu</label>
                 <div className="flex gap-2">
@@ -595,7 +591,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                     <div className="flex-1 space-y-1">
                       <label className="text-[9px] font-bold text-stone-500">Sampai: (Maks 1 Bln)</label>
                       <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} min={startDate} 
-                        // Batasi max 1 bulan dari start date
                         max={startDate ? new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + 1)).toISOString().split('T')[0] : ""} 
                         disabled={!startDate} 
                         className="w-full text-[11px] p-2 border-2 border-[#1E1E1E] rounded-lg font-bold outline-none disabled:opacity-50" />
@@ -604,7 +599,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                 )}
               </div>
 
-              {/* Filter Tipe Transaksi */}
               <div className="space-y-2">
                 <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Wallet size={12}/> Tipe Kas</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -614,7 +608,6 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
                 </div>
               </div>
 
-              {/* Filter Kategori Dinamis */}
               {filterType === "EXPENSE" && (
                 <div className="space-y-2 pt-2 border-t border-dashed border-stone-300 animate-in fade-in">
                   <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Tag size={12}/> Filter Kategori</label>
@@ -676,8 +669,8 @@ export default function BukuLogView({ accounts, setAccounts, transactions, setTr
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black block text-stone-600 uppercase tracking-wide">Rekening Tujuan Pencairan</label>
-              <select value={formDisbursementAccountId} onChange={(e) => setFormDisbursementAccountId(e.target.value)} className="w-full text-xs p-3 border-2 border-[#1E1E1E] rounded-xl font-bold bg-white shadow-[2px_2px_0px_0px_#1E1E1E] outline-none">
-                {accounts.filter(a => a.account_group === "PRIBADI" && a.type !== "CREDIT_CARD").map(a => (
+              <select value={formDisbursementAccountId} onChange={(e) => setFormDisbursementAccountId(e.target.value)} className="w-full text-xs p-3 border-2 border-[#1E1E1E] rounded-xl font-bold bg-white shadow-[2px_2px_0px_0px_#1E1E1E] outline-none" required>
+                {accounts.filter(a => (a.account_group || "PRIBADI").toUpperCase() === "PRIBADI" && a.type !== "CREDIT_CARD").map(a => (
                   <option key={a.id} value={a.id}>{a.name} (Saldo: Rp {a.balance.toLocaleString('id-ID')})</option>
                 ))}
               </select>

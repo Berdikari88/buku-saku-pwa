@@ -70,7 +70,7 @@ export default function App() {
       const { data, error } = await supabase.from('profiles').select('id').eq('id', userId).single();
       if (data) {
         setHasProfile(true);
-        fetchData(); 
+        fetchData(userId); // Kirim ID user ke fetchData
       } else {
         setHasProfile(false); 
       }
@@ -79,13 +79,38 @@ export default function App() {
     }
   }
 
-  async function fetchData() {
+  // ✅ BENTENG KEAMANAN FRONTEND DITAMBAHKAN DI SINI
+  async function fetchData(explicitUserId = null) {
     setIsLoading(true);
     try {
-      const { data: accountsData } = await supabase.from('accounts').select('*').order('name', { ascending: true });
-      const { data: transactionsData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-      const { data: targetsData } = await supabase.from('savings_targets').select('*').order('created_at', { ascending: false });
-      const { data: missionsData } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
+      // Dapatkan User ID yang sedang aktif
+      const currentUserId = explicitUserId || session?.user?.id;
+      if (!currentUserId) return;
+
+      // Filter query khusus untuk user_id yang sedang aktif
+      const { data: accountsData } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .order('name', { ascending: true });
+
+      const { data: transactionsData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .order('date', { ascending: false });
+
+      const { data: targetsData } = await supabase
+        .from('savings_targets')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .order('created_at', { ascending: false });
+
+      const { data: missionsData } = await supabase
+        .from('missions')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .order('created_at', { ascending: false });
 
       setAccounts(accountsData || []);
       setTransactions(transactionsData || []);
@@ -127,7 +152,7 @@ export default function App() {
     return (
       <OnboardingView 
         session={session} 
-        onComplete={() => { setHasProfile(true); fetchData(); }} 
+        onComplete={() => { setHasProfile(true); fetchData(session.user.id); }} 
       />
     );
   }
@@ -153,10 +178,10 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
-          {activeTab === "home" && <BerandaView accounts={accounts} transactions={transactions} missions={missions} savingsTargets={savingsTargets} fetchData={fetchData} session={session} setActiveTab={setActiveTab} />}
+          {activeTab === "home" && <BerandaView accounts={accounts} transactions={transactions} missions={missions} savingsTargets={savingsTargets} fetchData={() => fetchData(session.user.id)} session={session} setActiveTab={setActiveTab} />}
           {activeTab === "activity" && <BukuLogView accounts={accounts} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} />}
-          {activeTab === "insights" && <AiChatView session={session} fetchData={fetchData} chatHistory={chatHistory} setChatHistory={setChatHistory} transactions={transactions} setTransactions={setTransactions} accounts={accounts} setAccounts={setAccounts} />}
-          {activeTab === "profile" && <SettingsView accounts={accounts} transactions={transactions} setAccounts={setAccounts} setTransactions={setTransactions} setChatHistory={setChatHistory} setActiveTab={setActiveTab} fetchData={fetchData} />}
+          {activeTab === "insights" && <AiChatView session={session} fetchData={() => fetchData(session.user.id)} chatHistory={chatHistory} setChatHistory={setChatHistory} transactions={transactions} setTransactions={setTransactions} accounts={accounts} setAccounts={setAccounts} />}
+          {activeTab === "profile" && <SettingsView accounts={accounts} transactions={transactions} setAccounts={setAccounts} setTransactions={setTransactions} setChatHistory={setChatHistory} setActiveTab={setActiveTab} fetchData={() => fetchData(session.user.id)} />}
         </div>
 
         {activeTab !== "insights" && (

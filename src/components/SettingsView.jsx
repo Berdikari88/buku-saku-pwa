@@ -29,7 +29,7 @@ const callGeminiDirectly = async (prompt, apiKey) => {
   return "AI lagi ngopi, tapi dari angka di atas, tetap pantau keuanganmu ya!";
 };
 
-export default function SettingsView({ setAccounts, setTransactions, setChatHistory, setActiveTab, fetchData, accounts, transactions }) {
+export default function SettingsView({ setAccounts, setTransactions, setChatHistory, setActiveTab, fetchData, accounts = [], transactions = [] }) {
   const [profile, setProfile] = useState({ full_name: "Memuat...", email: "...", gender: "Laki-laki" });
   
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
@@ -121,7 +121,7 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     if (!numericValue) { setterFunction(""); return; }
     setterFunction(Number(numericValue).toLocaleString("id-ID"));
   };
-  const formatRp = (val) => new Intl.NumberFormat("id-ID").format(val);
+  const formatRp = (val) => new Intl.NumberFormat("id-ID").format(val || 0);
 
   // ==========================================
   // FUNGSI 1: MEMBANGUN DATA RAPOR
@@ -156,7 +156,6 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       let aiRoast = "Terus pantau arus kasmu ya!";
       
-      // PROMPT DIKEMBALIKAN KE LOGIKA AWAL YANG BENAR (MENGIKUTI MENU SETTINGS)
       if (apiKey) {
         try {
           const prompt = `Anda penasihat keuangan. Persona Anda: ${aiStyle} (jika skena=gaul, bijak=profesional, galak=sarkas). Analisa bulan ${reportMonth}: Pemasukan Rp${income}, Pengeluaran Rp${expense}. Top bocor: ${topCats.slice(0,3).map(c=>c.name).join(', ')}. Beri 1 paragraf (maks 4 kalimat) insight atau roasting sesuai persona. Jika persona skena, sapa dengan "Bosku".`;
@@ -388,7 +387,15 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     } catch (error) { showToast("Gagal menambah kategori: " + error.message, "error"); } finally { setCatLoading(false); }
   };
 
-  const executeLogout = async () => { setShowLogoutConfirm(false); await supabase.auth.signOut(); };
+  // FIXED: Bersihkan state lokal saat Logout agar tidak bocor ke sesi berikutnya
+  const executeLogout = async () => { 
+    setShowLogoutConfirm(false); 
+    if (setAccounts) setAccounts([]);
+    if (setTransactions) setTransactions([]);
+    if (setChatHistory) setChatHistory([]);
+    await supabase.auth.signOut(); 
+  };
+
   const iconOptions = [ { id: 'box', icon: <Box size={20}/>, label: 'Umum' }, { id: 'shopping-cart', icon: <ShoppingBag size={20}/>, label: 'Belanja' }, { id: 'utensils', icon: <Coffee size={20}/>, label: 'Konsumsi' }, { id: 'heart', icon: <Heart size={20}/>, label: 'Kesehatan' }, { id: 'monitor', icon: <Monitor size={20}/>, label: 'Digital' }, { id: 'smile', icon: <Smile size={20}/>, label: 'Hiburan' } ];
 
   return (
@@ -524,7 +531,7 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
                 <p className="font-bold text-[10px] mt-2 text-stone-500">Pengeluaran memakan <span className="font-black text-rose-600">{reportData.ratio.toFixed(1)}%</span> dari Pemasukan.</p>
               </div>
 
-              {/* FEEDBACK BUAT MU (SEBELUMNYA CELOTEH AI) */}
+              {/* FEEDBACK BUAT MU */}
               <div className="border-2 border-amber-400 p-5 rounded-2xl bg-[#FFFBEB] shadow-[4px_4px_0px_0px_#F59E0B]">
                 <h3 className="text-xs font-black text-amber-800 uppercase mb-2 flex items-center gap-2"><Sparkles size={16}/> Feedback buat mu</h3>
                 <p className="font-bold text-xs leading-relaxed text-amber-900">{reportData.aiRoast}</p>
@@ -547,7 +554,7 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
                 </ul>
               </div>
 
-              {/* AREA DOWNLOAD DOKUMEN LENGKAP TETAP TERBUKA */}
+              {/* AREA DOWNLOAD DOKUMEN LENGKAP */}
               <div className="pt-2 border-t-2 border-dashed border-stone-300">
                 <h3 className="text-[10px] font-black uppercase text-center text-stone-500 mb-4 mt-4">⬇️ UNDUH ARSIP LENGKAP ⬇️</h3>
                 <div className="grid grid-cols-2 gap-3">

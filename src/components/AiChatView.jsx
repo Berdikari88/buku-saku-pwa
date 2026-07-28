@@ -2,9 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { Send, Camera, X, CheckCircle, Sparkles, ChevronDown, ArrowRightLeft, Trash2, Repeat } from "lucide-react";
 import { supabase } from "../supabaseClient"; 
 
-// ============================================================================
-// MESIN TERMINATOR CTO: BRUTE-FORCE AUTO-DISCOVERY 
-// ============================================================================
 const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
   const data = await res.json();
@@ -82,7 +79,7 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
   reader.onerror = error => reject(error);
 });
 
-export default function AiChatView({ session, fetchData, chatHistory, setChatHistory, transactions, setTransactions, accounts, setAccounts }) {
+export default function AiChatView({ session, fetchData, chatHistory = [], setChatHistory, transactions = [], setTransactions, accounts = [], setAccounts }) {
   const [activeTab, setActiveTab] = useState("chat");
 
   const [chatInputText, setChatInputText] = useState("");
@@ -101,8 +98,8 @@ export default function AiChatView({ session, fetchData, chatHistory, setChatHis
   const [qiType, setQiType] = useState("EXPENSE"); 
   const [qiAmount, setQiAmount] = useState(0);
   const [qiTitle, setQiTitle] = useState(""); 
-  const [qiAccount, setQiAccount] = useState(accounts[0]?.id || "");
-  const [qiAccountTo, setQiAccountTo] = useState(accounts[1]?.id || ""); 
+  const [qiAccount, setQiAccount] = useState("");
+  const [qiAccountTo, setQiAccountTo] = useState(""); 
   const [qiCategory, setQiCategory] = useState("Lain-lain");
   const [qiPurpose, setQiPurpose] = useState("PRIBADI"); 
   const [qiIsRecurring, setQiIsRecurring] = useState(false);
@@ -111,6 +108,14 @@ export default function AiChatView({ session, fetchData, chatHistory, setChatHis
   const dropdownRef = useRef(null);
   const chatContainerRef = useRef(null);
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
+
+  // FIXED: Penyesuaian state akun otomatis saat data accounts masuk
+  useEffect(() => {
+    if (accounts && accounts.length > 0) {
+      if (!qiAccount) setQiAccount(accounts[0].id);
+      if (!qiAccountTo) setQiAccountTo(accounts[1]?.id || accounts[0].id);
+    }
+  }, [accounts]);
 
   useEffect(() => {
     async function loadCategories() {
@@ -390,30 +395,20 @@ BALAS JSON MURNI:
         
         const isRecurringBool = String(data.is_recurring).toLowerCase() === 'true';
 
-        // ==========================================
-        // SABUK PENGAMAN (OVERRIDE KATEGORI)
-        // ==========================================
         let finalCategory = data.category;
-        
-        // 1. Cek apakah AI menjawab dengan nama yang persis sama tapi beda huruf besar/kecil
         const matchedCategory = dbCategories.find(c => c.toLowerCase() === String(finalCategory).toLowerCase());
-        
-        // 2. Pembajakan Ekstrem: Cek apakah input chat user mengandung kata dari kategori
         const forcedCat = dbCategories.find(c => currentInput.toLowerCase().includes(c.toLowerCase()));
 
         if (forcedCat) {
-          finalCategory = forcedCat; // KOPAG terdeteksi di teks! Paksa pakai KOPAG!
+          finalCategory = forcedCat; 
         } else if (matchedCategory) {
           finalCategory = matchedCategory; 
         } else {
-          // Jika ngawur, kembalikan ke default
           finalCategory = dbCategories.includes("Lain-lain") ? "Lain-lain" : (dbCategories[0] || "Lain-lain");
         }
 
-        // Eksekusi Catat Normal ke Log
         executeAddTransaction(data.title, cleanAmount.toString(), data.type, parsedAccountId, data.is_reimburse, finalCategory);
 
-        // Eksekusi Simpan ke Tabel Recurring (Rutinitas)
         if (isRecurringBool) {
           try {
             let activeSession = session;
@@ -546,13 +541,11 @@ BALAS JSON MURNI:
   return (
     <div className="h-full flex flex-col space-y-3 pt-2 pb-2 min-h-0 w-full overflow-hidden relative">
       
-      {/* 1. KOTAK SWITCH TAB */}
       <div className="grid grid-cols-2 p-1 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E] shrink-0 z-20 mx-1">
         <button onClick={() => setActiveTab("chat")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'chat' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>💬 Chat AI</button>
         <button onClick={() => setActiveTab("manual")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'manual' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>⚡ Sat-Set Manual</button>
       </div>
 
-      {/* TAB A: FORM MANUAL */}
       {activeTab === "manual" && (
         <div className="flex-1 overflow-y-auto bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl shadow-[4px_4px_0px_0px_#1E1E1E] mx-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] animate-in fade-in">
           <div className="p-4 space-y-4">
@@ -660,7 +653,6 @@ BALAS JSON MURNI:
               )}
             </div>
             
-            {/* SAKLAR RUTIN BULANAN */}
             <div className="flex items-center justify-between p-3 mt-4 bg-stone-100 border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E]">
               <div className="flex items-center gap-2">
                 <Repeat size={16} className="text-indigo-600" />
@@ -682,7 +674,6 @@ BALAS JSON MURNI:
         </div>
       )}
 
-      {/* TAB B: AREA CHAT & INPUT */}
       {activeTab === "chat" && (
         <div className="flex-1 flex flex-col min-h-0 bg-white border-4 border-[#1E1E1E] rounded-3xl overflow-hidden shadow-[inset_0px_4px_10px_rgba(0,0,0,0.05)] mx-1 animate-in fade-in">
           
@@ -745,7 +736,6 @@ BALAS JSON MURNI:
         </div>
       )}
 
-      {/* CUSTOM CONFIRM MODAL: HAPUS CHAT */}
       {showClearChatConfirm && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-xs bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl p-6 shadow-[8px_8px_0px_0px_#000] text-center animate-in zoom-in-95">
@@ -766,44 +756,43 @@ BALAS JSON MURNI:
         </div>
       )}
 
-      {/* POP-UP VERIFIKASI AI VISION */}
       {ocrReviewData && (
          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-           <form onSubmit={handleConfirmOcrSubmit} className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center border-b-4 border-[#1E1E1E] pb-3">
-              <h3 className="text-sm font-black text-[#1E1E1E] uppercase flex items-center gap-1.5"><Sparkles size={16} className="text-amber-500"/> Verifikasi Struk AI</h3>
-              <button type="button" onClick={() => setOcrReviewData(null)} className="w-8 h-8 flex items-center justify-center bg-stone-200 rounded-lg border-2 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]"><X size={16} /></button>
-            </div>
-            
-            <div className="space-y-3 pt-1">
-              <div>
-                <label className="text-[10px] font-black text-stone-500 uppercase block mb-1">Status Peruntukan Dana</label>
-                <div className="flex gap-1.5 bg-stone-200 p-1 rounded-xl border-2 border-[#1E1E1E]">
-                  <button type="button" onClick={() => setOcrReviewData({...ocrReviewData, purpose: "PRIBADI"})} className={`flex-1 text-[9px] font-black uppercase py-2 rounded-lg transition border-2 border-[#1E1E1E] ${ocrReviewData.purpose === "PRIBADI" ? 'bg-sky-400 text-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-50 text-stone-500'}`}>Pribadi</button>
-                  <button type="button" onClick={() => setOcrReviewData({...ocrReviewData, purpose: "USAHA"})} className={`flex-1 text-[9px] font-black uppercase py-2 rounded-lg transition border-2 border-[#1E1E1E] ${ocrReviewData.purpose === "USAHA" ? 'bg-orange-400 text-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-50 text-stone-500'}`}>Usaha</button>
-                  <button type="button" onClick={() => setOcrReviewData({...ocrReviewData, purpose: "REIMBURSE"})} className={`flex-1 text-[9px] font-black uppercase py-2 rounded-lg transition border-2 border-[#1E1E1E] ${ocrReviewData.purpose === "REIMBURSE" ? 'bg-amber-400 text-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-50 text-stone-500'}`}>Klaim</button>
-                </div>
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-stone-500 uppercase block mb-1">Gunakan Dompet / CC</label>
-                <select value={ocrReviewData.accountId} onChange={(e) => setOcrReviewData({...ocrReviewData, accountId: e.target.value})} className="w-full text-xs font-bold p-3 border-2 border-[#1E1E1E] rounded-xl bg-white shadow-[2px_2px_0px_0px_#1E1E1E] outline-none">
-                  {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type === 'cc' ? 'Limit' : 'Saldo'}: {formatRp(acc.type === 'cc' ? Number(acc.credit_limit)+Number(acc.balance) : acc.balance)})</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[9px] font-black text-stone-500 uppercase block mb-1">Nama Barang</label>
-                  <input type="text" value={ocrReviewData.title} onChange={(e) => setOcrReviewData({...ocrReviewData, title: e.target.value})} className="w-full text-xs p-3 border-2 border-[#1E1E1E] bg-white rounded-xl font-bold shadow-[2px_2px_0px_0px_#1E1E1E]" required />
-                </div>
-                <div>
-                  <label className="text-[9px] font-black text-stone-500 uppercase block mb-1">Nominal (Rp)</label>
-                  <input type="text" inputMode="numeric" value={maskRupiah(ocrReviewData.amount)} onChange={(e) => setOcrReviewData({...ocrReviewData, amount: unmaskNumber(e.target.value)})} className="w-full text-xs p-3 border-2 border-[#1E1E1E] bg-white rounded-xl font-mono font-black text-rose-600 shadow-[2px_2px_0px_0px_#1E1E1E]" required />
-                </div>
-              </div>
-            </div>
-            <button type="submit" className="w-full p-4 mt-2 bg-emerald-500 text-[#1E1E1E] font-black text-xs uppercase tracking-widest rounded-xl border-4 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] active:scale-95 transition"><CheckCircle size={18} strokeWidth={3} className="inline mr-2" /> VALIDASI & SIMPAN</button>
-           </form>
-         </div>
+            <form onSubmit={handleConfirmOcrSubmit} className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-4 animate-in zoom-in-95 duration-200">
+             <div className="flex justify-between items-center border-b-4 border-[#1E1E1E] pb-3">
+               <h3 className="text-sm font-black text-[#1E1E1E] uppercase flex items-center gap-1.5"><Sparkles size={16} className="text-amber-500"/> Verifikasi Struk AI</h3>
+               <button type="button" onClick={() => setOcrReviewData(null)} className="w-8 h-8 flex items-center justify-center bg-stone-200 rounded-lg border-2 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]"><X size={16} /></button>
+             </div>
+             
+             <div className="space-y-3 pt-1">
+               <div>
+                 <label className="text-[10px] font-black text-stone-500 uppercase block mb-1">Status Peruntukan Dana</label>
+                 <div className="flex gap-1.5 bg-stone-200 p-1 rounded-xl border-2 border-[#1E1E1E]">
+                   <button type="button" onClick={() => setOcrReviewData({...ocrReviewData, purpose: "PRIBADI"})} className={`flex-1 text-[9px] font-black uppercase py-2 rounded-lg transition border-2 border-[#1E1E1E] ${ocrReviewData.purpose === "PRIBADI" ? 'bg-sky-400 text-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-50 text-stone-500'}`}>Pribadi</button>
+                   <button type="button" onClick={() => setOcrReviewData({...ocrReviewData, purpose: "USAHA"})} className={`flex-1 text-[9px] font-black uppercase py-2 rounded-lg transition border-2 border-[#1E1E1E] ${ocrReviewData.purpose === "USAHA" ? 'bg-orange-400 text-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-50 text-stone-500'}`}>Usaha</button>
+                   <button type="button" onClick={() => setOcrReviewData({...ocrReviewData, purpose: "REIMBURSE"})} className={`flex-1 text-[9px] font-black uppercase py-2 rounded-lg transition border-2 border-[#1E1E1E] ${ocrReviewData.purpose === "REIMBURSE" ? 'bg-amber-400 text-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-50 text-stone-500'}`}>Klaim</button>
+                 </div>
+               </div>
+               <div>
+                 <label className="text-[10px] font-black text-stone-500 uppercase block mb-1">Gunakan Dompet / CC</label>
+                 <select value={ocrReviewData.accountId} onChange={(e) => setOcrReviewData({...ocrReviewData, accountId: e.target.value})} className="w-full text-xs font-bold p-3 border-2 border-[#1E1E1E] rounded-xl bg-white shadow-[2px_2px_0px_0px_#1E1E1E] outline-none">
+                   {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type === 'cc' ? 'Limit' : 'Saldo'}: {formatRp(acc.type === 'cc' ? Number(acc.credit_limit)+Number(acc.balance) : acc.balance)})</option>)}
+                 </select>
+               </div>
+               <div className="grid grid-cols-2 gap-2">
+                 <div>
+                   <label className="text-[9px] font-black text-stone-500 uppercase block mb-1">Nama Barang</label>
+                   <input type="text" value={ocrReviewData.title} onChange={(e) => setOcrReviewData({...ocrReviewData, title: e.target.value})} className="w-full text-xs p-3 border-2 border-[#1E1E1E] bg-white rounded-xl font-bold shadow-[2px_2px_0px_0px_#1E1E1E]" required />
+                 </div>
+                 <div>
+                   <label className="text-[9px] font-black text-stone-500 uppercase block mb-1">Nominal (Rp)</label>
+                   <input type="text" inputMode="numeric" value={maskRupiah(ocrReviewData.amount)} onChange={(e) => setOcrReviewData({...ocrReviewData, amount: unmaskNumber(e.target.value)})} className="w-full text-xs p-3 border-2 border-[#1E1E1E] bg-white rounded-xl font-mono font-black text-rose-600 shadow-[2px_2px_0px_0px_#1E1E1E]" required />
+                 </div>
+               </div>
+             </div>
+             <button type="submit" className="w-full p-4 mt-2 bg-emerald-500 text-[#1E1E1E] font-black text-xs uppercase tracking-widest rounded-xl border-4 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] active:scale-95 transition"><CheckCircle size={18} strokeWidth={3} className="inline mr-2" /> VALIDASI & SIMPAN</button>
+            </form>
+          </div>
       )}
     </div>
   );

@@ -13,7 +13,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
   const [updateAmount, setUpdateAmount] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // STATE PEMBAYARAN KARTU KREDIT (BARU)
+  // STATE PEMBAYARAN KARTU KREDIT
   const [ccPayModal, setCcPayModal] = useState(null);
   const [ccPayAmount, setCcPayAmount] = useState("");
   const [ccPaySource, setCcPaySource] = useState("");
@@ -95,7 +95,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
 
       setReportData({ month: lastMonthVal, income, expense, ratio, topCats, colors, conicGradient });
       setIsReportPreviewOpen(true);
-      dismissReportNotif(); // Tutup banner karena sudah dibuka
+      dismissReportNotif(); 
     } catch (error) {
       showToast("Gagal memuat rapor.", "error");
     }
@@ -128,20 +128,23 @@ export default function BerandaView({ accounts = [], transactions = [], missions
 
   const sumBalance = (arr) => arr.reduce((sum, acc) => sum + Number(acc.balance || 0), 0);
   const sumLimit = (arr) => arr.reduce((sum, acc) => sum + Number(acc.credit_limit || 0), 0);
+  const sumCcDebt = (arr) => arr.reduce((sum, acc) => sum + Math.abs(Number(acc.balance || 0)), 0);
 
   const totalCashP = sumBalance(cashPribadi);
   const totalBankP = sumBalance(bankPribadi);
   const totalEwalletP = sumBalance(ewalletPribadi);
-  const totalCcDebtP = sumBalance(ccPribadi);
+  const totalCcDebtP = sumCcDebt(ccPribadi); 
   const totalCcLimitP = sumLimit(ccPribadi);
-  const netWorthPribadi = totalCashP + totalBankP + totalEwalletP + totalCcDebtP; 
+  
+  // ✅ LOGIKA NET WORTH SUDAH DIPERBAIKI (MEMOTONG UTANG CC):
+  const netWorthPribadi = totalCashP + totalBankP + totalEwalletP - totalCcDebtP; 
 
   const totalCashU = sumBalance(cashUsaha);
   const totalBankU = sumBalance(bankUsaha);
   const totalEwalletU = sumBalance(ewalletUsaha);
-  const totalCcDebtU = sumBalance(ccUsaha);
+  const totalCcDebtU = sumCcDebt(ccUsaha);
   const totalCcLimitU = sumLimit(ccUsaha);
-  const netWorthUsaha = totalCashU + totalBankU + totalEwalletU + totalCcDebtU;
+  const netWorthUsaha = totalCashU + totalBankU + totalEwalletU - totalCcDebtU;
 
   const recentTransactions = transactions.slice(0, 5);
 
@@ -155,7 +158,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
 
   const todayDay = new Date().getDate();
   const dueCreditCards = [...ccPribadi, ...ccUsaha].filter(cc => {
-    if (!cc.statement_date || !cc.due_date || cc.balance >= 0) return false;
+    if (!cc.statement_date || !cc.due_date || Number(cc.balance) === 0) return false;
     const sd = parseInt(cc.statement_date);
     const dd = parseInt(cc.due_date);
     if (sd < dd) return todayDay >= sd && todayDay <= dd;
@@ -186,7 +189,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
     setIsUpdating(true);
     try {
       const cleanInput = parseFloat(updateAmount.replace(/\./g, ""));
-      const newCollected = Number(targetToUpdate.collected_amount) + cleanInput;
+      const newCollected = Number(targetToUpdate.collected_amount || 0) + cleanInput;
       const { error } = await supabase.from('savings_targets').update({ collected_amount: newCollected }).eq('id', targetToUpdate.id);
       if (error) throw error;
       showToast(`Progres Rp ${cleanInput.toLocaleString('id-ID')} dicatat! Amankan fisiknya di ${targetToUpdate.location} ya!`, "success");
@@ -207,7 +210,14 @@ export default function BerandaView({ accounts = [], transactions = [], missions
     try {
       const amountPaid = parseFloat(ccPayAmount.replace(/\./g, "")); 
       const sourceAcc = accounts.find(a => a.id === ccPaySource);
-      const currentDebt = Math.abs(Number(ccPayModal.balance)); 
+      
+      if (!sourceAcc) {
+        showToast("Rekening sumber pembayaran tidak ditemukan!", "error");
+        setIsUpdating(false);
+        return;
+      }
+
+      const currentDebt = Math.abs(Number(ccPayModal.balance || 0)); 
 
       let debtCleared = 0;
       let adminFee = 0;
@@ -220,10 +230,10 @@ export default function BerandaView({ accounts = [], transactions = [], missions
         adminFee = 0;
       }
 
-      const newSourceBalance = Number(sourceAcc.balance) - amountPaid;
+      const newSourceBalance = Number(sourceAcc.balance || 0) - amountPaid;
       await supabase.from('accounts').update({ balance: newSourceBalance }).eq('id', sourceAcc.id);
 
-      const newCcBalance = Number(ccPayModal.balance) + debtCleared;
+      const newCcBalance = Number(ccPayModal.balance || 0) + debtCleared;
       await supabase.from('accounts').update({ balance: newCcBalance }).eq('id', ccPayModal.id);
 
       let titleTx = `Bayar Tagihan ${ccPayModal.name}`;
@@ -231,8 +241,16 @@ export default function BerandaView({ accounts = [], transactions = [], missions
         titleTx += ` (Termasuk Biaya Admin: Rp ${adminFee.toLocaleString('id-ID')})`;
       }
 
+      let currentUserId = session?.user?.id;
+      if (!currentUserId) {
+        const { data: { session: activeSession } } = await supabase.auth.getSession();
+        currentUserId = activeSession?.user?.id;
+      }
+
+      if (!currentUserId) throw new Error("Sesi pengguna tidak valid.");
+
       await supabase.from('transactions').insert([{
-        user_id: session.user.id,
+        user_id: currentUserId,
         account_id: sourceAcc.id,
         type: 'EXPENSE',
         amount: amountPaid,
@@ -288,9 +306,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* BANNER NOTIFIKASI RAPOR (KALCER & NEO-BRUTALISM) */}
-      {/* ========================================== */}
+      {/* BANNER NOTIFIKASI RAPOR */}
       {showReportNotif && (
         <div className="bg-purple-100 border-4 border-purple-500 p-5 rounded-3xl shadow-[4px_4px_0px_0px_#9333EA] animate-in slide-in-from-top-4 relative overflow-hidden mb-2">
           <div className="absolute top-[-20px] right-[-20px] opacity-20"><Sparkles size={120} className="text-purple-600 animate-pulse"/></div>
@@ -341,7 +357,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
             {carouselItems.map((item, index) => {
               if (item.type === 'tabungan') {
                 const tab = item.data;
-                const percent = Math.min(100, Math.round((tab.collected_amount / tab.target_amount) * 100));
+                const percent = Math.min(100, Math.round(((tab.collected_amount || 0) / (tab.target_amount || 1)) * 100));
                 return (
                   <div key={`tab-${tab.id}`} className="w-full min-w-full shrink-0 snap-center px-1 pb-2">
                     <div className="bg-white border-4 border-[#1E1E1E] p-5 rounded-3xl shadow-[4px_4px_0px_0px_#1E1E1E] flex flex-col justify-between h-full">
@@ -387,12 +403,12 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                       </div>
                       <div className="bg-white/20 p-3 rounded-xl border-2 border-[#1E1E1E] backdrop-blur-sm mt-auto">
                         <p className="text-xs font-black mb-2 flex items-center justify-between">
-                          <span>🔥 {misi.current_streak} Hari Berhasil!</span>
-                          <span className="text-[9px] uppercase tracking-widest bg-white/50 px-2 py-0.5 rounded">Target: {misi.duration_days} Hari</span>
+                          <span>🔥 {misi.current_streak || 0} Hari Berhasil!</span>
+                          <span className="text-[9px] uppercase tracking-widest bg-white/50 px-2 py-0.5 rounded">Target: {misi.duration_days || 7} Hari</span>
                         </p>
                         <div className="flex gap-1.5 w-full">
                           {Array.from({length: misi.duration_days || 7}).map((_, i) => (
-                            <div key={i} className={`flex-1 h-2 rounded-full border-2 border-[#1E1E1E] shadow-sm ${i < misi.current_streak ? 'bg-white' : 'bg-amber-600/30'}`}></div>
+                            <div key={i} className={`flex-1 h-2 rounded-full border-2 border-[#1E1E1E] shadow-sm ${i < (misi.current_streak || 0) ? 'bg-white' : 'bg-amber-600/30'}`}></div>
                           ))}
                         </div>
                       </div>
@@ -448,7 +464,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
               <p className="text-[10px] font-black text-[#1E1E1E]">Total CC <span onClick={() => setDetailModal('cc')} className="text-[8px] text-rose-500 font-bold underline cursor-pointer hover:text-rose-700 transition">(Lihat Kartu)</span></p>
             </div>
             <div>
-              <p className="text-sm font-black text-rose-600 mt-1 truncate">{formatRp(Math.abs(totalCcDebtP))}</p>
+              <p className="text-sm font-black text-rose-600 mt-1 truncate">{formatRp(totalCcDebtP)}</p>
               <p className="text-[8px] font-bold text-stone-400 truncate mt-0.5">Limit: {formatRp(totalCcLimitP)}</p>
             </div>
           </div>
@@ -497,7 +513,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                 <span className="inline-block border-2 border-stone-300 text-stone-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mb-2">E-WALLET</span><p className="text-[10px] font-black text-[#1E1E1E]">Total E-Wallet <span onClick={() => setDetailModal('ewallet_usaha')} className="text-[8px] text-stone-500 font-bold underline cursor-pointer hover:text-stone-700 transition">(Lihat E-Wallet)</span></p><p className="text-sm font-black text-[#1E1E1E] mt-2">{formatRp(totalEwalletU)}</p>
               </div>
               <div className="bg-white border-2 border-rose-400 border-dashed rounded-2xl p-4 flex flex-col justify-between">
-                <div><span className="inline-block bg-rose-100 text-rose-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mb-2">LIABILITAS CC</span><p className="text-[10px] font-black text-[#1E1E1E]">Total CC <span onClick={() => setDetailModal('cc_usaha')} className="text-[8px] text-rose-500 font-bold underline cursor-pointer hover:text-rose-700 transition">(Lihat Kartu)</span></p></div><p className="text-sm font-black text-rose-600 mt-2">{formatRp(Math.abs(totalCcDebtU))}</p>
+                <div><span className="inline-block bg-rose-100 text-rose-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase mb-2">LIABILITAS CC</span><p className="text-[10px] font-black text-[#1E1E1E]">Total CC <span onClick={() => setDetailModal('cc_usaha')} className="text-[8px] text-rose-500 font-bold underline cursor-pointer hover:text-rose-700 transition">(Lihat Kartu)</span></p></div><p className="text-sm font-black text-rose-600 mt-2">{formatRp(totalCcDebtU)}</p>
               </div>
             </div>
           </div>
@@ -544,7 +560,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
               ) : (
                 activeModalList.map(acc => {
                   if (acc.type?.toLowerCase() === 'cc') {
-                    const isDue = todayDay >= parseInt(acc.statement_date) && todayDay <= parseInt(acc.due_date);
+                    const isDue = todayDay >= parseInt(acc.statement_date || 1) && todayDay <= parseInt(acc.due_date || 30);
                     return (
                       <div key={acc.id} className="bg-white border-2 border-[#1E1E1E] rounded-2xl p-4 shadow-[3px_3px_0px_0px_#1E1E1E]">
                         <div className="flex justify-between items-start mb-3">
@@ -554,8 +570,8 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                           </span>
                         </div>
                         <div className="flex justify-between items-end border-t border-dashed border-stone-300 pt-3">
-                          <div><p className="text-[9px] font-black text-stone-500 uppercase">Tagihan</p><p className="text-sm font-black text-rose-600">{formatRp(Math.abs(acc.balance))}</p></div>
-                          <div className="text-right"><p className="text-[9px] font-black text-stone-500 uppercase">Sisa Limit</p><p className="text-sm font-black text-emerald-600">{formatRp(Number(acc.credit_limit) + Number(acc.balance))}</p></div>
+                          <div><p className="text-[9px] font-black text-stone-500 uppercase">Tagihan</p><p className="text-sm font-black text-rose-600">{formatRp(Math.abs(acc.balance || 0))}</p></div>
+                          <div className="text-right"><p className="text-[9px] font-black text-stone-500 uppercase">Sisa Limit</p><p className="text-sm font-black text-emerald-600">{formatRp(Number(acc.credit_limit || 0) - Math.abs(Number(acc.balance || 0)))}</p></div>
                         </div>
                         
                         <button onClick={() => { setDetailModal(null); setCcPayModal(acc); }} className="w-full mt-4 bg-rose-50 hover:bg-rose-100 text-rose-600 border-2 border-rose-500 font-black text-[10px] uppercase py-2.5 rounded-xl transition active:scale-95 flex items-center justify-center gap-1.5">
@@ -577,14 +593,11 @@ export default function BerandaView({ accounts = [], transactions = [], missions
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL LAYAR RAPOR INTERAKTIF (UX INSTAN DI BERANDA) */}
-      {/* ========================================== */}
+      {/* MODAL LAYAR RAPOR INTERAKTIF */}
       {isReportPreviewOpen && reportData && (
         <div className="fixed inset-0 bg-black/80 z-[1000] flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in">
           <div className="w-full max-w-sm bg-[#FDFBF7] sm:border-4 border-[#1E1E1E] sm:rounded-3xl h-[90vh] sm:h-[85vh] shadow-[0px_-8px_0px_0px_#000] sm:shadow-[8px_8px_0px_0px_#000] flex flex-col overflow-hidden animate-in slide-in-from-bottom-8 rounded-t-3xl relative">
             
-            {/* STICKY HEADER */}
             <div className="bg-[#FDFBF7] border-b-4 border-[#1E1E1E] p-4 flex justify-between items-center z-10 shrink-0">
               <div>
                 <h2 className="text-lg font-black uppercase">Rapor Finansial</h2>
@@ -593,7 +606,6 @@ export default function BerandaView({ accounts = [], transactions = [], missions
               <button onClick={() => setIsReportPreviewOpen(false)} className="w-10 h-10 bg-rose-100 hover:bg-rose-200 border-2 border-[#1E1E1E] rounded-xl flex items-center justify-center transition active:scale-95"><X size={20} className="text-rose-600" /></button>
             </div>
 
-            {/* SCROLLABLE BODY */}
             <div className="p-5 space-y-6 overflow-y-auto flex-1 pb-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               
               <div className="grid grid-cols-2 gap-4">
@@ -607,7 +619,6 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                 </div>
               </div>
 
-              {/* BAR PEMASUKAN */}
               <div className="border-2 border-[#1E1E1E] p-5 rounded-2xl bg-white shadow-[4px_4px_0px_0px_#1E1E1E]">
                 <h3 className="text-xs font-black uppercase mb-3 flex items-center gap-2"><Zap size={16} className="text-amber-500"/> Bar Pemasukan</h3>
                 <div className="w-full h-6 border-2 border-[#1E1E1E] rounded-full overflow-hidden flex bg-emerald-100">
@@ -640,7 +651,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
 
               <div className="pt-2 border-t-2 border-dashed border-stone-300">
                 <button onClick={() => { setIsReportPreviewOpen(false); if(setActiveTab) setActiveTab("settings"); }} className="w-full mt-4 bg-[#1E1E1E] text-white font-black text-xs uppercase py-4 rounded-xl border-4 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#444] hover:bg-stone-800 transition active:translate-y-1 active:shadow-none flex items-center justify-center gap-2">
-                  PusAT LAPORAN (PDF/CSV) <ChevronRight size={16} />
+                  PUSAT LAPORAN (PDF/CSV) <ChevronRight size={16} />
                 </button>
               </div>
 
@@ -705,7 +716,7 @@ export default function BerandaView({ accounts = [], transactions = [], missions
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest mb-0.5">Total Utang</p>
-                  <p className="text-xs font-black text-rose-700">{formatRp(Math.abs(ccPayModal.balance))}</p>
+                  <p className="text-xs font-black text-rose-700">{formatRp(Math.abs(ccPayModal.balance || 0))}</p>
                 </div>
               </div>
 
