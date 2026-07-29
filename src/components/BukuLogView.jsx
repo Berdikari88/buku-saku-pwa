@@ -483,7 +483,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
                       <h4 className="text-xs font-black text-stone-900">{c.title}</h4>
                       <p className="text-[9px] font-mono text-stone-500 mt-0.5">Nilai Ajuan: <span className="font-bold text-stone-800">Rp {c.total_amount.toLocaleString('id-ID')}</span></p>
                     </div>
-                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded border border-amber-500 bg-amber-50 text-amber-700 uppercase">PENDING HRD</span>
+                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded border border-amber-500 bg-amber-50 text-amber-700 uppercase">PENDING KANTOR</span>
                   </div>
                   <div className="flex gap-2 border-t border-dashed border-stone-200 pt-2">
                     <button onClick={() => setPreviewPdfData(c)} className="flex-1 min-h-[44px] bg-stone-50 border-2 border-[#1E1E1E] text-[10px] font-black rounded-lg flex items-center justify-center gap-1 shadow-[1px_1px_0px_0px_#000] hover:bg-stone-100 transition active:scale-95">📄 Pratinjau</button>
@@ -656,7 +656,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4">
           <form onSubmit={handleConfirmDisbursedSubmit} className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-2xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center border-b-2 border-[#1E1E1E] pb-3">
-              <h3 className="text-sm font-black text-stone-800 uppercase">💰 Validasi Cair HRD</h3>
+              <h3 className="text-sm font-black text-stone-800 uppercase">💰 Validasi Cair Kantor</h3>
               <button type="button" onClick={() => setLiquidatingClaim(null)} className="min-w-[32px] min-h-[32px] border-2 border-[#1E1E1E] flex items-center justify-center bg-stone-200 rounded-lg hover:bg-rose-100 transition shadow-[2px_2px_0px_0px_#1E1E1E]"><X size={14} strokeWidth={3} /></button>
             </div>
             <div className="bg-white p-3 border-2 border-stone-300 rounded-xl text-xs font-bold text-stone-700 space-y-1">

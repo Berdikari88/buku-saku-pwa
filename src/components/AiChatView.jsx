@@ -250,7 +250,11 @@ export default function AiChatView({ session, fetchData, chatHistory = [], setCh
     e.preventDefault();
     if (qiAmount <= 0) return alert("Nominal tidak boleh 0!");
     if (!qiAccount) return alert("Pilih dompet sumber dulu!");
-    if (qiPurpose === "REIMBURSE" && !qiReceiptFile) return alert("⚠️ Anda WAJIB melampirkan berkas foto struk fisik untuk Klaim Dinas.");
+    
+    // REVISI LOGIKA VALIDASI: Hanya minta struk jika status Klaim DAN tipe Pengeluaran (EXPENSE)
+    if (qiPurpose === "REIMBURSE" && qiType === "EXPENSE" && !qiReceiptFile) {
+      return alert("⚠️ Anda WAJIB melampirkan berkas foto struk fisik untuk Klaim Dinas.");
+    }
 
     let prefix = qiPurpose === "USAHA" ? "[Usaha] " : qiPurpose === "REIMBURSE" ? "[Klaim] " : "";
     let defaultTitle = qiType === 'EXPENSE' ? 'Pengeluaran' : qiType === 'INCOME' ? 'Pemasukan' : 'Pindah Dana';
@@ -576,7 +580,8 @@ BALAS JSON MURNI:
               <input type="text" placeholder="Catatan (Opsional, cth: Beli Kopi)" value={qiTitle} onChange={(e) => setQiTitle(e.target.value)} className="w-full bg-transparent text-sm font-bold text-stone-600 outline-none placeholder:text-stone-400" />
             </div>
 
-            {qiPurpose === "REIMBURSE" && (
+            {/* REVISI LOGIKA TAMPILAN: Kotak Struk hanya muncul jika Klaim DAN tipe Pengeluaran */}
+            {qiPurpose === "REIMBURSE" && qiType === "EXPENSE" && (
               <div className="flex items-center justify-between bg-amber-50 border-2 border-[#1E1E1E] rounded-xl p-3 animate-in fade-in">
                 <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest pl-1">Lampirkan Struk</span>
                 
