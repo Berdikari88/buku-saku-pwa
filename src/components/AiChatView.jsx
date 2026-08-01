@@ -109,7 +109,6 @@ export default function AiChatView({ session, fetchData, chatHistory = [], setCh
   const chatContainerRef = useRef(null);
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
 
-  // FIXED: Penyesuaian state akun otomatis saat data accounts masuk
   useEffect(() => {
     if (accounts && accounts.length > 0) {
       if (!qiAccount) setQiAccount(accounts[0].id);
@@ -251,7 +250,6 @@ export default function AiChatView({ session, fetchData, chatHistory = [], setCh
     if (qiAmount <= 0) return alert("Nominal tidak boleh 0!");
     if (!qiAccount) return alert("Pilih dompet sumber dulu!");
     
-    // REVISI LOGIKA VALIDASI: Hanya minta struk jika status Klaim DAN tipe Pengeluaran (EXPENSE)
     if (qiPurpose === "REIMBURSE" && qiType === "EXPENSE" && !qiReceiptFile) {
       return alert("⚠️ Anda WAJIB melampirkan berkas foto struk fisik untuk Klaim Dinas.");
     }
@@ -542,17 +540,25 @@ BALAS JSON MURNI:
     setOcrReviewData(null);
   };
 
+  // ==========================================
+  // PERUBAHAN UI OPSI B (FULL SCREEN & STICKY)
+  // ==========================================
   return (
-    <div className="h-full flex flex-col space-y-3 pt-2 pb-2 min-h-0 w-full overflow-hidden relative">
+    <div className="flex flex-col h-full w-full bg-[#FDFBF7] relative">
       
-      <div className="grid grid-cols-2 p-1 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E] shrink-0 z-20 mx-1">
-        <button onClick={() => setActiveTab("chat")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'chat' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>💬 Chat AI</button>
-        <button onClick={() => setActiveTab("manual")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'manual' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>⚡ Sat-Set Manual</button>
+      {/* 1. STICKY HEADER (TABS NAVIGATION) */}
+      <div className="sticky top-0 z-40 bg-[#FDFBF7] px-3 pt-3 pb-2 border-b-2 border-stone-100">
+        <div className="grid grid-cols-2 p-1 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E]">
+          <button onClick={() => setActiveTab("chat")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'chat' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>💬 Chat AI</button>
+          <button onClick={() => setActiveTab("manual")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'manual' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>⚡ Sat-Set Manual</button>
+        </div>
       </div>
 
+      {/* 2. SAT-SET MANUAL TAB */}
       {activeTab === "manual" && (
-        <div className="flex-1 overflow-y-auto bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl shadow-[4px_4px_0px_0px_#1E1E1E] mx-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] animate-in fade-in">
-          <div className="p-4 space-y-4">
+        <div className="flex-1 flex flex-col min-h-0 animate-in fade-in">
+          {/* Form Scrollable Area */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="flex flex-col sm:flex-row justify-between gap-3">
               <div className="flex-1">
                 <label className="text-[10px] font-black text-stone-500 uppercase block mb-1">Status Peruntukan</label>
@@ -580,7 +586,6 @@ BALAS JSON MURNI:
               <input type="text" placeholder="Catatan (Opsional, cth: Beli Kopi)" value={qiTitle} onChange={(e) => setQiTitle(e.target.value)} className="w-full bg-transparent text-sm font-bold text-stone-600 outline-none placeholder:text-stone-400" />
             </div>
 
-            {/* REVISI LOGIKA TAMPILAN: Kotak Struk hanya muncul jika Klaim DAN tipe Pengeluaran */}
             {qiPurpose === "REIMBURSE" && qiType === "EXPENSE" && (
               <div className="flex items-center justify-between bg-amber-50 border-2 border-[#1E1E1E] rounded-xl p-3 animate-in fade-in">
                 <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest pl-1">Lampirkan Struk</span>
@@ -671,18 +676,23 @@ BALAS JSON MURNI:
                 <div className={`absolute top-0.5 w-4 h-4 bg-white border-2 border-[#1E1E1E] rounded-full transition-all ${qiIsRecurring ? 'left-6' : 'left-0.5'}`}></div>
               </button>
             </div>
+          </div>
 
-            <button onClick={handleQuickSubmit} className="w-full min-h-[50px] mt-4 bg-[#1E1E1E] text-white p-3 rounded-xl font-black text-sm uppercase tracking-widest shadow-[4px_4px_0px_0px_#D6D3D1] active:translate-y-1 transition">
+          {/* STICKY BOTTOM BUTTON (SIMPAN TRANSAKSI) */}
+          <div className="sticky bottom-0 z-30 bg-gradient-to-t from-[#FDFBF7] via-[#FDFBF7] to-transparent p-4 shrink-0 border-t border-stone-200/50">
+            <button onClick={handleQuickSubmit} className="w-full min-h-[50px] bg-[#1E1E1E] text-white p-3 rounded-xl font-black text-sm uppercase tracking-widest shadow-[4px_4px_0px_0px_#D6D3D1] active:translate-y-1 transition">
               Simpan Transaksi
             </button>
           </div>
         </div>
       )}
 
+      {/* 3. CHAT AI TAB */}
       {activeTab === "chat" && (
-        <div className="flex-1 flex flex-col min-h-0 bg-white border-4 border-[#1E1E1E] rounded-3xl overflow-hidden shadow-[inset_0px_4px_10px_rgba(0,0,0,0.05)] mx-1 animate-in fade-in">
+        <div className="flex-1 flex flex-col min-h-0 bg-white animate-in fade-in">
           
-          <div className="bg-stone-100 border-b-2 border-[#1E1E1E] px-4 py-3 flex justify-between items-center flex-shrink-0">
+          {/* Sub-Header Chat Info */}
+          <div className="bg-stone-100 border-b-2 border-stone-200 px-4 py-3 flex justify-between items-center shrink-0">
             <span className="text-[10px] font-black text-stone-500 uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={14}/> AI Asisten</span>
             {chatHistory.length > 0 && (
               <button onClick={() => setShowClearChatConfirm(true)} className="flex items-center gap-1.5 text-[9px] font-black text-rose-500 bg-white border-2 border-[#1E1E1E] px-2.5 py-1.5 rounded-lg shadow-[2px_2px_0px_0px_#1E1E1E] active:translate-y-0.5 transition hover:bg-rose-50">
@@ -691,7 +701,8 @@ BALAS JSON MURNI:
             )}
           </div>
 
-          <div ref={chatContainerRef} className="flex-1 p-3 overflow-y-auto space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth">
+          {/* Chat Flow (Scrollable Area) */}
+          <div ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth">
             {chatHistory.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-center p-4 opacity-60">
                 <Sparkles size={36} className="mb-3 text-stone-400" />
@@ -726,7 +737,8 @@ BALAS JSON MURNI:
             )}
           </div>
 
-          <div className="p-3 border-t-2 border-[#1E1E1E] bg-stone-50 flex-shrink-0">
+          {/* STICKY BOTTOM INPUT (CHAT) */}
+          <div className="sticky bottom-0 z-30 p-3 border-t-2 border-[#1E1E1E] bg-stone-50 shrink-0">
             <form onSubmit={handleSendChatMessage} className="flex items-center gap-2 bg-white border-2 border-[#1E1E1E] rounded-full p-1.5 shadow-[2px_2px_0px_0px_#1E1E1E]">
               <input type="file" accept="image/*" ref={fileInputRef} onChange={handleRealCameraUpload} className="hidden" />
               <button type="button" onClick={triggerCamera} className="w-10 h-10 flex-shrink-0 bg-stone-100 rounded-full flex items-center justify-center border-2 border-[#1E1E1E] hover:bg-amber-100 active:scale-95 transition">
@@ -741,6 +753,7 @@ BALAS JSON MURNI:
         </div>
       )}
 
+      {/* POPUP & MODALS (Z-INDEX SUPER TINGGI) */}
       {showClearChatConfirm && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4 animate-in fade-in">
           <div className="w-full max-w-xs bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl p-6 shadow-[8px_8px_0px_0px_#000] text-center animate-in zoom-in-95">
@@ -762,7 +775,7 @@ BALAS JSON MURNI:
       )}
 
       {ocrReviewData && (
-         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+         <div className="fixed inset-0 bg-black/80 z-[999] flex items-center justify-center p-4">
             <form onSubmit={handleConfirmOcrSubmit} className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-3xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-4 animate-in zoom-in-95 duration-200">
              <div className="flex justify-between items-center border-b-4 border-[#1E1E1E] pb-3">
                <h3 className="text-sm font-black text-[#1E1E1E] uppercase flex items-center gap-1.5"><Sparkles size={16} className="text-amber-500"/> Verifikasi Struk AI</h3>
