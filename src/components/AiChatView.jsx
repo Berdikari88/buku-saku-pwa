@@ -540,13 +540,10 @@ BALAS JSON MURNI:
     setOcrReviewData(null);
   };
 
-  // ==========================================
-  // PERUBAHAN UI OPSI B (FULL SCREEN & STICKY)
-  // ==========================================
   return (
     <div className="flex flex-col h-full w-full bg-[#FDFBF7] relative">
       
-      {/* 1. STICKY HEADER (TABS NAVIGATION) */}
+      {/* STICKY HEADER (TABS NAVIGATION) */}
       <div className="sticky top-0 z-40 bg-[#FDFBF7] px-3 pt-3 pb-2 border-b-2 border-stone-100">
         <div className="grid grid-cols-2 p-1 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E]">
           <button onClick={() => setActiveTab("chat")} className={`py-2 text-xs font-black transition rounded-lg ${activeTab === 'chat' ? 'bg-[#1E1E1E] text-white' : 'text-stone-500 hover:bg-stone-100'}`}>💬 Chat AI</button>
@@ -554,7 +551,7 @@ BALAS JSON MURNI:
         </div>
       </div>
 
-      {/* 2. SAT-SET MANUAL TAB */}
+      {/* SAT-SET MANUAL TAB */}
       {activeTab === "manual" && (
         <div className="flex-1 flex flex-col min-h-0 animate-in fade-in">
           {/* Form Scrollable Area */}
@@ -568,12 +565,14 @@ BALAS JSON MURNI:
                   <button type="button" onClick={() => setQiPurpose("REIMBURSE")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${qiPurpose === 'REIMBURSE' ? 'bg-amber-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Klaim</button>
                 </div>
               </div>
-              <div className="shrink-0">
+              
+              {/* TIPE SECTION FIXED - Sejajar dan simetris penuh ke kanan */}
+              <div className="shrink-0 sm:mt-0">
                 <label className="text-[10px] font-black text-stone-500 uppercase block mb-1">Tipe</label>
                 <div className="flex gap-1 border-2 border-[#1E1E1E] rounded-xl overflow-hidden h-11 bg-[#1E1E1E] p-1">
-                  <button onClick={() => setQiType("EXPENSE")} className={`px-4 text-[10px] rounded-lg font-black uppercase ${qiType === 'EXPENSE' ? 'bg-rose-500 text-white border-2 border-[#1E1E1E]' : 'bg-transparent text-stone-300'}`}>Keluar</button>
-                  <button onClick={() => setQiType("INCOME")} className={`px-4 text-[10px] rounded-lg font-black uppercase ${qiType === 'INCOME' ? 'bg-emerald-500 text-white border-2 border-[#1E1E1E]' : 'bg-transparent text-stone-300'}`}>Masuk</button>
-                  <button onClick={() => setQiType("TRANSFER")} className={`px-4 text-[10px] rounded-lg font-black uppercase flex items-center gap-1 ${qiType === 'TRANSFER' ? 'bg-indigo-500 text-white border-2 border-[#1E1E1E]' : 'bg-transparent text-stone-300'}`}><ArrowRightLeft size={14}/></button>
+                  <button onClick={() => setQiType("EXPENSE")} className={`flex-1 flex items-center justify-center text-[10px] rounded-lg font-black uppercase ${qiType === 'EXPENSE' ? 'bg-rose-500 text-white border-2 border-[#1E1E1E]' : 'bg-transparent text-stone-300'}`}>Keluar</button>
+                  <button onClick={() => setQiType("INCOME")} className={`flex-1 flex items-center justify-center text-[10px] rounded-lg font-black uppercase ${qiType === 'INCOME' ? 'bg-emerald-500 text-white border-2 border-[#1E1E1E]' : 'bg-transparent text-stone-300'}`}>Masuk</button>
+                  <button onClick={() => setQiType("TRANSFER")} className={`flex-1 flex items-center justify-center text-[10px] rounded-lg font-black uppercase ${qiType === 'TRANSFER' ? 'bg-indigo-500 text-white border-2 border-[#1E1E1E]' : 'bg-transparent text-stone-300'}`}><ArrowRightLeft size={14}/></button>
                 </div>
               </div>
             </div>
@@ -687,7 +686,7 @@ BALAS JSON MURNI:
         </div>
       )}
 
-      {/* 3. CHAT AI TAB */}
+      {/* CHAT AI TAB */}
       {activeTab === "chat" && (
         <div className="flex-1 flex flex-col min-h-0 bg-white animate-in fade-in">
           

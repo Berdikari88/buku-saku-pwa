@@ -475,14 +475,14 @@ export default function BerandaView({ accounts = [], transactions = [], missions
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <BookOpen size={14} className="text-sky-600" />
-                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Dana Talangan Pribadi</h3>
+                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Dana Reimbursement Kantor</h3>
               </div>
               <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Pending Klaim Kantor</p>
             </div>
             <span className={`text-xl font-black ${finalTalangan > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>{formatRp(finalTalangan)}</span>
           </div>
           <button onClick={goToKlaim} className="w-full bg-[#FDFBF7] border-4 border-[#1E1E1E] p-4 rounded-2xl font-black text-xs hover:bg-stone-100 transition active:scale-95 shadow-[4px_4px_0px_0px_#1E1E1E]">
-            Kelola Pengajuan Klaim
+            KELOLA REIMBURSEMENT
           </button>
         </div>
       </div>
