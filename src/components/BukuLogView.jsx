@@ -133,7 +133,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   });
 
   // ==========================================
-  // AUTO-PILOT AI GENERATOR (TEXT NATURAL)
+  // AUTO-PILOT AI GENERATOR DENGAN PEMBATAS FISIK KATA
   // ==========================================
   const generateDynamicInsight = async () => {
     setIsGeneratingInsight(true);
@@ -145,25 +145,25 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
 
       const totalMasuk = macroTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
       const totalKeluar = macroTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
-      const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category} (${d.percentage}%)`).join(", ");
+      const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category}`).join(", ");
 
-      const prompt = `Anda adalah penasihat keuangan pribadi. Berikan ulasan yang natural, mengalir, dan layaknya ngobrol dengan pengguna.
-Data saat ini:
-- Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
-- Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
-- Pengeluaran Terbesar: ${top3 || "Belum ada"}
+      // PROMPT SUPER PENDEK & NATURAL
+      const prompt = `Tulis 2 kalimat saja secara natural.
+Data:
+Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
+Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
+Kategori Boros: ${top3 || "Belum ada"}
 
-Gaya Bahasa: "${savedPersona}". (Jika Santai = panggil Bosku/gaul/banyak emoji. Jika Profesional = sopan/baku. Jika Galak = tegas/marahi jika boros).
+Gaya: ${savedPersona}
 
-TUGAS:
-Ceritakan total pengeluarannya berapa, highlight kategori terbesarnya apa, lalu berikan saran. Biarkan kalimat mengalir natural seperti "Transaksi pengeluaranmu saat ini sebesar Rp... dan yang paling besar ada di kategori...". 
-
-ATURAN MUTLAK FORMAT: 
-Langsung mulai percakapan dalam bentuk satu paragraf utuh! DILARANG pakai format markdown (* atau #). DILARANG menulis proses berpikir atau kata pengantar seperti "Evaluasi/Saran/Role". Jangan kaku, buat senatural mungkin!`;
+Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ada simbol bintang (*), hashtag (#), atau kata pengantar.`;
 
       const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7 } 
+        generationConfig: { 
+          temperature: 0.7,
+          maxOutputTokens: 80 // <--- KUNCI MUTLAK! AI akan tercekik & berhenti otomatis setelah max ~80 kata!
+        } 
       };
 
       // FASE 1: TEMBAKAN KILAT
@@ -672,7 +672,7 @@ Langsung mulai percakapan dalam bentuk satu paragraf utuh! DILARANG pakai format
             
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Calendar size={12}/> Periode Waktu <span className="text-[8px] text-amber-600">(Mempengaruhi AI & Donut)</span></label>
+                <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Calendar size={12}/> Periode Waktu</label>
                 <div className="flex gap-2">
                   {['Semua', 'Bulan Ini', 'Kustom'].map(opt => (
                     <button key={opt} onClick={() => setFilterPeriod(opt)} className={`flex-1 py-2 text-[11px] font-bold rounded-lg border-2 transition-all ${filterPeriod === opt ? 'bg-[#1E1E1E] text-white border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-white text-stone-600 border-[#1E1E1E]'}`}>{opt}</button>
