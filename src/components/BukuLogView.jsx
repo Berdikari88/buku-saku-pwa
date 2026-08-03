@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Sparkles, Archive, X, Printer, Loader2, Search, SlidersHorizontal, BrainCircuit, Wallet, Calendar, Tag, FileText } from "lucide-react";
+import { Sparkles, Archive, X, Printer, Loader2, Search, SlidersHorizontal, Settings2, BrainCircuit, Wallet, Calendar, Tag, FileText } from "lucide-react";
 import { supabase } from "../supabaseClient"; 
 
 export default function BukuLogView({ accounts = [], setAccounts, transactions = [], setTransactions, fetchData }) {
@@ -16,25 +16,33 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- STATE FILTER PENCARIAN MUTASI ---
+  // --- STATE FILTER & PENCARIAN MUTASI ---
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilterModal, setShowFilterModal] = useState(false);
+  
+  // DEFAULT TAMPILAN AWAL: "Bulan Ini" dan "Semua" 
   const [filterPeriod, setFilterPeriod] = useState("Bulan Ini"); 
   const [filterType, setFilterType] = useState("Semua"); 
   const [filterCategory, setFilterCategory] = useState("Semua");
+
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  // --- STATE GENERATE ANALISA AI DINAMIS (AUTO-PILOT) ---
-  const [aiInsightText, setAiInsightText] = useState("");
-  const [isGeneratingInsight, setIsGeneratingInsight] = useState(true);
+  // --- STATE SETTINGS AI ---
+  const [showAiSettings, setShowAiSettings] = useState(false);
+  const [aiScope, setAiScope] = useState("PRIBADI");
 
   // --- STATE FILTER ARSIP KLAIM LUNAS ---
   const [claimFilterPeriod, setClaimFilterPeriod] = useState("Semua");
   const [claimStartDate, setClaimStartDate] = useState("");
   const [claimEndDate, setClaimEndDate] = useState("");
+
+  // =======================================================
+  // STATE BARU: BATAS TAMPILAN (LOAD MORE LOGIC)
+  // =======================================================
   const [visibleTxCount, setVisibleTxCount] = useState(30);
 
+  // FIXED: Auto-select akun default saat accounts selesai dimuat
   useEffect(() => {
     if (accounts && accounts.length > 0) {
       const defaultAcc = accounts.find(a => a.account_group === "PRIBADI" && a.type !== "CREDIT_CARD") || accounts[0];
@@ -44,6 +52,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     }
   }, [accounts]);
 
+  // PENERIMA SINYAL DARI BERANDA (AUTO-NAVIGASI TAB KLAIM)
   useEffect(() => {
     const targetTab = localStorage.getItem("targetBukuLogTab");
     if (targetTab) {
@@ -52,6 +61,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     }
   }, []);
 
+  // KEMBALIKAN BATAS TAMPILAN KE 30 JIKA FILTER/PENCARIAN BERUBAH
   useEffect(() => {
     setVisibleTxCount(30);
   }, [searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
@@ -70,8 +80,13 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return cat; 
   };
 
-  const macroTransactions = useMemo(() => {
+  // 1. DATA FILTERING MUTASI
+  const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (filterType !== "Semua" && t.type !== filterType) return false;
+      if (filterType === "EXPENSE" && filterCategory !== "Semua" && t.category !== filterCategory) return false;
+      
       if (filterPeriod === "Bulan Ini") {
         const currentMonth = new Date().toISOString().slice(0, 7);
         if (t.date && !t.date.startsWith(currentMonth)) return false;
@@ -81,16 +96,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       }
       return true;
     });
-  }, [transactions, filterPeriod, startDate, endDate]);
-
-  const filteredTransactions = useMemo(() => {
-    return macroTransactions.filter(t => {
-      if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (filterType !== "Semua" && t.type !== filterType) return false;
-      if (filterType === "EXPENSE" && filterCategory !== "Semua" && t.category !== filterCategory) return false;
-      return true;
-    });
-  }, [macroTransactions, searchQuery, filterType, filterCategory]);
+  }, [transactions, searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
 
   const displayedTransactions = filteredTransactions.slice(0, visibleTxCount);
 
@@ -99,8 +105,9 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return Array.from(new Set(expenseTxs.map(t => t.category))).filter(Boolean);
   }, [transactions]);
 
+  // 2. DONUT CHART LOGIC
   const expenseDistribution = useMemo(() => {
-    const expenseTx = macroTransactions.filter(t => t.type === "EXPENSE");
+    const expenseTx = filteredTransactions.filter(t => t.type === "EXPENSE");
     const categoriesMap = {};
     let grandTotal = 0;
     
@@ -122,7 +129,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       return [...top3, others];
     }
     return rawDistribution;
-  }, [macroTransactions]);
+  }, [filteredTransactions]);
 
   const chartColors = ["#F43F5E", "#F59E0B", "#3B82F6", "#10B981", "#8B5CF6", "#64748B"];
   let cumulativePercent = 0;
@@ -132,125 +139,22 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return slice;
   });
 
-  // ==========================================
-  // AUTO-PILOT AI GENERATOR DENGAN PEMBATAS FISIK KATA
-  // ==========================================
-  const generateDynamicInsight = async () => {
-    setIsGeneratingInsight(true);
-    try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key Gemini belum dipasang di .env");
+  // 3. AI INSIGHT LOGIC
+  const computedLogAiCategoryInsight = useMemo(() => {
+    if (expenseDistribution.length === 0) return "Belum ada data pengeluaran untuk dianalisis AI pada filter ini.";
+    const top = expenseDistribution[0];
+    if (top.percentage >= 40) return `Analisis AI (${aiScope}): Porsi terbesar pengeluaran tersedot di "${top.category}" (${top.percentage}%). Awasi agar tidak over-budget ya Bosku!`;
+    return `Analisis AI (${aiScope}): Distribusi pos belanja berjalan seimbang tanpa lonjakan anomali yang mencurigakan.`;
+  }, [expenseDistribution, aiScope]);
 
-      const savedPersona = localStorage.getItem('bukusaku_ai_persona') || localStorage.getItem('ai_persona') || "Santai";
-
-      const totalMasuk = macroTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
-      const totalKeluar = macroTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
-      const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category}`).join(", ");
-
-      // PROMPT SUPER PENDEK & NATURAL
-      const prompt = `Tulis 2 kalimat saja secara natural.
-Data:
-Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
-Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
-Kategori Boros: ${top3 || "Belum ada"}
-
-Gaya: ${savedPersona}
-
-Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ada simbol bintang (*), hashtag (#), atau kata pengantar.`;
-
-      const payload = {
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { 
-          temperature: 0.7,
-          maxOutputTokens: 80 // <--- KUNCI MUTLAK! AI akan tercekik & berhenti otomatis setelah max ~80 kata!
-        } 
-      };
-
-      // FASE 1: TEMBAKAN KILAT
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const responseData = await response.json();
-
-        if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-          let cleanText = responseData.candidates[0].content.parts[0].text.trim();
-          cleanText = cleanText.replace(/^(Analisa|Evaluasi|Saran|Role).*?:/gmi, '').trim(); 
-          setAiInsightText(cleanText);
-          setIsGeneratingInsight(false);
-          return;
-        }
-      } catch (err) {
-        console.warn("Tembakan Kilat Flash meleset, menyalakan radar...");
-      }
-
-      // FASE 2: RADAR OTOMATIS
-      let validModels = [];
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      const data = await res.json();
-      if (!data.models) throw new Error("Gagal mengambil daftar mesin dari server Google.");
-
-      validModels = data.models
-        .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-        .map(m => m.name.replace('models/', ''));
-
-      // FASE 3: EKSEKUSI AMAN
-      let lastErrorMsg = "";
-      let successText = "";
-
-      for (const model of validModels) {
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-          const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-          const responseData = await response.json();
-
-          if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-            let cleanText = responseData.candidates[0].content.parts[0].text.trim();
-            successText = cleanText.replace(/^(Analisa|Evaluasi|Saran|Role).*?:/gmi, '').trim();
-            break; 
-          } else if (!response.ok) {
-            throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
-          }
-        } catch (err) {
-          lastErrorMsg = err.message;
-        }
-      }
-
-      if (successText) {
-        setAiInsightText(successText);
-      } else {
-        throw new Error(lastErrorMsg);
-      }
-
-    } catch (err) {
-      console.error("Kesalahan Fatal AI Insight:", err);
-      setAiInsightText(`⚠️ AI Gagal Memuat Analisa. Alasan: ${err.message}`);
-    } finally {
-      setIsGeneratingInsight(false);
-    }
-  };
-
-  useEffect(() => {
-    if (subTabActivity !== "mutasi") return;
-    
-    setIsGeneratingInsight(true);
-    const delayAi = setTimeout(() => {
-      if (macroTransactions.length > 0) {
-        generateDynamicInsight();
-      } else {
-        setAiInsightText("Belum ada rekam jejak transaksi di periode ini yang bisa dianalisa.");
-        setIsGeneratingInsight(false);
-      }
-    }, 800);
-
-    return () => clearTimeout(delayAi);
-  }, [macroTransactions, subTabActivity]);
-
+  // LOAD KLAIM DB
   const loadClaimsFromDB = async () => {
     try {
       const { data, error } = await supabase.from('reimbursement_claims').select('*').order('created_at', { ascending: false });
       if (data && !error) {
         const { data: { session } } = await supabase.auth.getSession();
         const userId = session?.user?.id;
+        
         const userClaims = userId ? data.filter(c => c.user_id === userId) : data;
 
         const formattedClaims = userClaims.map(c => ({
@@ -269,6 +173,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
 
   const filteredPaidClaims = useMemo(() => {
     let paid = activeClaims.filter(c => c.status === "PAID");
+    
     if (claimFilterPeriod === "Bulan Ini") {
       const currentMonth = new Date().toISOString().slice(0, 7);
       paid = paid.filter(c => c.disbursement_date && c.disbursement_date.startsWith(currentMonth));
@@ -276,6 +181,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
       if (claimStartDate) paid = paid.filter(c => c.disbursement_date && c.disbursement_date >= claimStartDate);
       if (claimEndDate) paid = paid.filter(c => c.disbursement_date && c.disbursement_date <= claimEndDate + 'T23:59:59');
     }
+    
     return paid;
   }, [activeClaims, claimFilterPeriod, claimStartDate, claimEndDate]);
 
@@ -292,6 +198,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
     if (!claimFolderName || selectedTxForClaim.length === 0) return alert("Pilih pengeluaran & beri nama dokumen.");
     
     setIsProcessing(true); 
+
     const computedTotal = transactions.filter(t => selectedTxForClaim.includes(t.id)).reduce((sum, t) => sum + t.amount, 0);
     const newFolderId = generateUUID(); 
 
@@ -307,6 +214,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
       const { error: txError } = await supabase.from('transactions')
           .update({ claim_id: newFolderId })
           .in('id', selectedTxForClaim);
+      
       if (txError) throw txError;
 
       setSelectedTxForClaim([]); 
@@ -314,6 +222,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
 
       if (fetchData) await fetchData();
       await loadClaimsFromDB();
+
     } catch (err) { 
       alert("⚠️ Gagal menyinkronkan ke Database: " + err.message);
     } finally {
@@ -326,6 +235,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
     if (!formDisbursementAccountId) return alert("Pilih rekening pencairan!");
     
     setIsProcessing(true); 
+
     const totalDicairkan = unmaskNumber(formDisbursedAmount);
     const selisih = liquidatingClaim.total_amount - totalDicairkan;
     const currentDateStr = new Date().toISOString().split("T")[0];
@@ -367,6 +277,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
 
       if (fetchData) await fetchData();
       await loadClaimsFromDB();
+
       setLiquidatingClaim(null); 
       setFormDisbursedAmount("");
     } catch (error) {
@@ -448,28 +359,20 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
         {subTabActivity === "mutasi" && (
           <div className="space-y-4 animate-in fade-in">
             
-            {/* 1. ANALISA AI (AUTO-PILOT & SYNC DENGAN SETTINGS) */}
+            {/* 1. ANALISA AI */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] relative">
-              <div className="flex justify-between items-center mb-3 border-b-2 border-stone-100 pb-2">
+              <div className="flex justify-between items-start mb-2">
                 <p className="text-[10px] font-black text-amber-600 tracking-wider uppercase flex items-center gap-1.5">
-                  <BrainCircuit size={14} /> <span>Analisis AI Otomatis</span>
+                  <BrainCircuit size={14} /> <span>Analisis Asisten AI</span>
                 </p>
+                <button onClick={() => setShowAiSettings(true)} className="p-1.5 bg-stone-50 border-2 border-[#1E1E1E] rounded-md shadow-[1px_1px_0px_0px_#1E1E1E] hover:bg-stone-100 active:translate-y-px transition">
+                  <Settings2 size={12} className="text-stone-700" />
+                </button>
               </div>
-
-              <div className="min-h-[50px] flex items-center justify-center">
-                {isGeneratingInsight ? (
-                  <div className="flex w-full items-center justify-center gap-2 text-amber-600 font-black text-[10px] uppercase tracking-widest animate-pulse">
-                    <Loader2 size={16} className="animate-spin" /> MERACIK ANALISA...
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-700 font-bold leading-relaxed w-full">
-                    {aiInsightText}
-                  </p>
-                )}
-              </div>
+              <p className="text-xs text-stone-700 font-bold leading-relaxed">"{computedLogAiCategoryInsight}"</p>
             </div>
 
-            {/* 2. DONUT CHART (HANYA TERPENGARUH DATA MAKRO / PERIODE BULAN) */}
+            {/* 2. DONUT CHART */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] text-center">
               <p className="text-[10px] font-black text-stone-500 uppercase tracking-wide text-left mb-3 flex items-center gap-1.5"><Sparkles size={12}/> Distribusi Pengeluaran</p>
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
@@ -494,7 +397,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
               </div>
             </div>
             
-            {/* 3. PENCARIAN & FILTER BAR (HANYA MEMPENGARUHI DAFTAR TRANSAKSI DI BAWAH) */}
+            {/* 3. PENCARIAN & FILTER BAR */}
             <div className="space-y-2">
               <p className="text-[10px] font-black text-stone-500 uppercase tracking-wide mb-1 flex items-center gap-1"><Archive size={12}/> Buku Riwayat Lengkap</p>
               
@@ -526,7 +429,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
                 </div>
               )}
               
-              {/* DAFTAR TRANSAKSI MUTASI (DATA MIKRO) */}
+              {/* DAFTAR TRANSAKSI MUTASI DENGAN LIMIT & LOAD MORE */}
               <div className="space-y-2 mt-2">
                 {filteredTransactions.length === 0 && (
                   <div className="text-center py-8 border-2 border-dashed border-stone-300 rounded-xl bg-stone-50">
@@ -661,7 +564,7 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
         )}
       </div>
 
-      {/* --- MODAL FILTER MUTASI --- */}
+      {/* --- MODAL FILTER BERJENJANG MUTASI --- */}
       {showFilterModal && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-end justify-center sm:items-center sm:p-4" onClick={() => setShowFilterModal(false)}>
           <div className="w-full sm:max-w-sm bg-[#FDFBF7] border-t-4 sm:border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-5 animate-in slide-in-from-bottom-10" onClick={(e) => e.stopPropagation()}>
@@ -718,6 +621,31 @@ Aturan: Langsung keluarkan 2 kalimat natural seperti ngobrol ke teman. Jangan ad
 
             <button onClick={() => setShowFilterModal(false)} className="w-full min-h-[48px] mt-4 bg-[#1E1E1E] text-white font-black text-xs uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] hover:bg-stone-800 transition active:translate-y-1 active:shadow-none">
               Terapkan Filter
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL PENGATURAN AI --- */}
+      {showAiSettings && (
+        <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4" onClick={() => setShowAiSettings(false)}>
+          <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-2xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-5 animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center border-b-2 border-[#1E1E1E] pb-3">
+              <h3 className="text-sm font-black text-stone-800 uppercase flex items-center gap-1.5"><Settings2 size={16}/> Parameter AI</h3>
+              <button type="button" onClick={() => setShowAiSettings(false)} className="min-w-[32px] min-h-[32px] border-2 border-[#1E1E1E] flex items-center justify-center bg-stone-200 rounded-lg hover:bg-rose-100 transition shadow-[2px_2px_0px_0px_#1E1E1E]"><X size={14} strokeWidth={3} /></button>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black block text-stone-500 uppercase">Fokus Alokasi Dana</label>
+                <div className="flex gap-2 p-1 bg-stone-200 border-2 border-[#1E1E1E] rounded-xl h-11">
+                  <button type="button" onClick={() => setAiScope("PRIBADI")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${aiScope === 'PRIBADI' ? 'bg-sky-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Pribadi</button>
+                  <button type="button" onClick={() => setAiScope("USAHA")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${aiScope === 'USAHA' ? 'bg-orange-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Usaha</button>
+                  <button type="button" onClick={() => setAiScope("GABUNGAN")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${aiScope === 'GABUNGAN' ? 'bg-stone-50 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Gabungan</button>
+                </div>
+              </div>
+            </div>
+            <button onClick={() => setShowAiSettings(false)} className="w-full min-h-[48px] bg-amber-400 text-amber-950 font-black text-xs uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] transition active:translate-y-1 active:shadow-none">
+              Simpan Setelan
             </button>
           </div>
         </div>
