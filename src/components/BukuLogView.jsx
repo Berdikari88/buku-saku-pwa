@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Sparkles, Archive, X, Printer, Loader2, Search, SlidersHorizontal, Settings2, BrainCircuit, Wallet, Calendar, Tag, FileText } from "lucide-react";
+import { Sparkles, Archive, X, Printer, Loader2, Search, SlidersHorizontal, BrainCircuit, Wallet, Calendar, Tag, FileText } from "lucide-react";
 import { supabase } from "../supabaseClient"; 
 
 export default function BukuLogView({ accounts = [], setAccounts, transactions = [], setTransactions, fetchData }) {
@@ -16,31 +16,23 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- STATE FILTER & PENCARIAN MUTASI ---
+  // --- STATE FILTER PENCARIAN MUTASI ---
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilterModal, setShowFilterModal] = useState(false);
-  
   const [filterPeriod, setFilterPeriod] = useState("Bulan Ini"); 
   const [filterType, setFilterType] = useState("Semua"); 
   const [filterCategory, setFilterCategory] = useState("Semua");
-
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  // --- STATE SETTINGS AI (Dengan Gaya Bahasa) ---
-  const [showAiSettings, setShowAiSettings] = useState(false);
-  const [aiScope, setAiScope] = useState("PRIBADI");
-  const [aiPersona, setAiPersona] = useState(localStorage.getItem('bukusaku_ai_persona') || "Santai");
-
-  // --- STATE GENERATE ANALISA AI DINAMIS ---
+  // --- STATE GENERATE ANALISA AI DINAMIS (AUTO-PILOT) ---
   const [aiInsightText, setAiInsightText] = useState("");
-  const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  const [isGeneratingInsight, setIsGeneratingInsight] = useState(true);
 
   // --- STATE FILTER ARSIP KLAIM LUNAS ---
   const [claimFilterPeriod, setClaimFilterPeriod] = useState("Semua");
   const [claimStartDate, setClaimStartDate] = useState("");
   const [claimEndDate, setClaimEndDate] = useState("");
-
   const [visibleTxCount, setVisibleTxCount] = useState(30);
 
   useEffect(() => {
@@ -62,8 +54,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
 
   useEffect(() => {
     setVisibleTxCount(30);
-    // Reset AI Insight text ketika filter berubah agar user diminta generate ulang
-    setAiInsightText(""); 
   }, [searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
 
   const unmaskNumber = (str) => parseInt(str.toString().replace(/\./g, ""), 10) || 0;
@@ -80,12 +70,13 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return cat; 
   };
 
-  const filteredTransactions = useMemo(() => {
+  // ========================================================
+  // 1. DATA MAKRO (KHUSUS UNTUK AI & GRAFIK DONAT)
+  // KEBAL terhadap pencarian teks atau filter kategori.
+  // Hanya terpengaruh oleh Periode Waktu.
+  // ========================================================
+  const macroTransactions = useMemo(() => {
     return transactions.filter(t => {
-      if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (filterType !== "Semua" && t.type !== filterType) return false;
-      if (filterType === "EXPENSE" && filterCategory !== "Semua" && t.category !== filterCategory) return false;
-      
       if (filterPeriod === "Bulan Ini") {
         const currentMonth = new Date().toISOString().slice(0, 7);
         if (t.date && !t.date.startsWith(currentMonth)) return false;
@@ -95,7 +86,20 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       }
       return true;
     });
-  }, [transactions, searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
+  }, [transactions, filterPeriod, startDate, endDate]);
+
+  // ========================================================
+  // 2. DATA MIKRO (KHUSUS UNTUK DAFTAR TRANSAKSI DI BAWAH)
+  // Terpengaruh oleh semua filter (Pencarian, Tipe, Kategori)
+  // ========================================================
+  const filteredTransactions = useMemo(() => {
+    return macroTransactions.filter(t => {
+      if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (filterType !== "Semua" && t.type !== filterType) return false;
+      if (filterType === "EXPENSE" && filterCategory !== "Semua" && t.category !== filterCategory) return false;
+      return true;
+    });
+  }, [macroTransactions, searchQuery, filterType, filterCategory]);
 
   const displayedTransactions = filteredTransactions.slice(0, visibleTxCount);
 
@@ -104,8 +108,9 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return Array.from(new Set(expenseTxs.map(t => t.category))).filter(Boolean);
   }, [transactions]);
 
+  // DONUT CHART MENGGUNAKAN DATA MAKRO
   const expenseDistribution = useMemo(() => {
-    const expenseTx = filteredTransactions.filter(t => t.type === "EXPENSE");
+    const expenseTx = macroTransactions.filter(t => t.type === "EXPENSE");
     const categoriesMap = {};
     let grandTotal = 0;
     
@@ -127,7 +132,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       return [...top3, others];
     }
     return rawDistribution;
-  }, [filteredTransactions]);
+  }, [macroTransactions]);
 
   const chartColors = ["#F43F5E", "#F59E0B", "#3B82F6", "#10B981", "#8B5CF6", "#64748B"];
   let cumulativePercent = 0;
@@ -138,7 +143,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   });
 
   // ==========================================
-  // LOGIKA BARU: GENERATE AI DINAMIS
+  // AUTO-PILOT AI GENERATOR (SYNC DENGAN SETTINGS)
   // ==========================================
   const generateDynamicInsight = async () => {
     setIsGeneratingInsight(true);
@@ -146,33 +151,36 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("API Key Gemini tidak ditemukan.");
 
-      const totalMasuk = filteredTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
-      const totalKeluar = filteredTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
+      // OTOMATIS SEDOT DARI MENU SETTINGS GLOBAl
+      const savedPersona = localStorage.getItem('bukusaku_ai_persona') || localStorage.getItem('ai_persona') || "Santai";
+
+      const totalMasuk = macroTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
+      const totalKeluar = macroTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
       const selisih = totalMasuk - totalKeluar;
       const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category} (${d.percentage}%)`).join(", ");
 
       const prompt = `Anda adalah penasihat keuangan pribadi.
-Data filter pengguna saat ini (Skope: ${aiScope}):
+Data transaksi pengguna saat ini:
 - Total Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
 - Total Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
 - Arus Kas (Net): Rp ${selisih.toLocaleString('id-ID')}
-- 3 Kategori Pengeluaran Terbesar: ${top3 || "Belum ada data"}
+- 3 Kategori Pengeluaran Terbesar: ${top3 || "Belum ada pengeluaran spesifik"}
 
-GAYA BAHASA YANG HARUS DIGUNAKAN: "${aiPersona}".
-- Jika "Santai": Gunakan bahasa gaul, santai, asik, panggil "Bosku", banyak emoji.
-- Jika "Profesional": Gunakan bahasa formal, sopan, terstruktur, seolah perencana keuangan profesional.
-- Jika "Galak/Disiplin": Tegas, blak-blakan, marahi jika boros/minus, tidak basa-basi.
+GAYA BAHASA YANG HARUS DIGUNAKAN: "${savedPersona}".
+- Jika "Santai": Gunakan bahasa gaul, santai, asik, panggil "Bosku", gunakan emoji dengan pas.
+- Jika "Profesional": Gunakan bahasa formal, rapi, terstruktur, seolah perencana keuangan profesional.
+- Jika "Galak/Disiplin": Tegas, blak-blakan, marahi jika boros/minus, jangan basa-basi.
 
-TUGAS: Berikan analisa singkat maksimal 3 kalimat saja.
-1. Evaluasi arus kas (apakah untung atau boncos).
-2. Soroti pengeluaran terbesarnya.
+TUGAS: Berikan analisa singkat maksimal 3 kalimat saja!
+1. Evaluasi apakah bulan ini untung atau boncos.
+2. Soroti pos pengeluaran terbesarnya.
 3. Beri 1 saran praktis.
-JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
+JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murni.`;
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7 } // Temperature di-set 0.7 agar AI lebih kreatif dan luwes!
+        generationConfig: { temperature: 0.7 } 
       };
 
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -183,17 +191,28 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
         setAiInsightText(responseData.candidates[0].content.parts[0].text);
       }
     } catch (err) {
-      setAiInsightText("Mohon maaf Bosku, asisten AI sedang kelelahan atau koneksi terputus. Coba lagi nanti ya.");
+      setAiInsightText("Mohon maaf Bosku, koneksi asisten AI terputus. Coba refresh halaman.");
     } finally {
       setIsGeneratingInsight(false);
     }
   };
 
-  const saveAiSettings = () => {
-    localStorage.setItem('bukusaku_ai_persona', aiPersona);
-    setShowAiSettings(false);
-    setAiInsightText(""); // Reset insight minta generate baru pake gaya bahasa baru
-  };
+  // TRIGGER AUTO-PILOT AI (Dengan Debounce 800ms)
+  useEffect(() => {
+    if (subTabActivity !== "mutasi") return;
+    
+    setIsGeneratingInsight(true);
+    const delayAi = setTimeout(() => {
+      if (macroTransactions.length > 0) {
+        generateDynamicInsight();
+      } else {
+        setAiInsightText("Belum ada rekam jejak transaksi di periode ini yang bisa dianalisa.");
+        setIsGeneratingInsight(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(delayAi);
+  }, [macroTransactions, subTabActivity]); // HANYA terpancing saat data makro (Periode) berubah
 
   const loadClaimsFromDB = async () => {
     try {
@@ -201,7 +220,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
       if (data && !error) {
         const { data: { session } } = await supabase.auth.getSession();
         const userId = session?.user?.id;
-        
         const userClaims = userId ? data.filter(c => c.user_id === userId) : data;
 
         const formattedClaims = userClaims.map(c => ({
@@ -220,7 +238,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
 
   const filteredPaidClaims = useMemo(() => {
     let paid = activeClaims.filter(c => c.status === "PAID");
-    
     if (claimFilterPeriod === "Bulan Ini") {
       const currentMonth = new Date().toISOString().slice(0, 7);
       paid = paid.filter(c => c.disbursement_date && c.disbursement_date.startsWith(currentMonth));
@@ -228,7 +245,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
       if (claimStartDate) paid = paid.filter(c => c.disbursement_date && c.disbursement_date >= claimStartDate);
       if (claimEndDate) paid = paid.filter(c => c.disbursement_date && c.disbursement_date <= claimEndDate + 'T23:59:59');
     }
-    
     return paid;
   }, [activeClaims, claimFilterPeriod, claimStartDate, claimEndDate]);
 
@@ -245,7 +261,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
     if (!claimFolderName || selectedTxForClaim.length === 0) return alert("Pilih pengeluaran & beri nama dokumen.");
     
     setIsProcessing(true); 
-
     const computedTotal = transactions.filter(t => selectedTxForClaim.includes(t.id)).reduce((sum, t) => sum + t.amount, 0);
     const newFolderId = generateUUID(); 
 
@@ -261,7 +276,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
       const { error: txError } = await supabase.from('transactions')
           .update({ claim_id: newFolderId })
           .in('id', selectedTxForClaim);
-      
       if (txError) throw txError;
 
       setSelectedTxForClaim([]); 
@@ -269,7 +283,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
 
       if (fetchData) await fetchData();
       await loadClaimsFromDB();
-
     } catch (err) { 
       alert("⚠️ Gagal menyinkronkan ke Database: " + err.message);
     } finally {
@@ -282,7 +295,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
     if (!formDisbursementAccountId) return alert("Pilih rekening pencairan!");
     
     setIsProcessing(true); 
-
     const totalDicairkan = unmaskNumber(formDisbursedAmount);
     const selisih = liquidatingClaim.total_amount - totalDicairkan;
     const currentDateStr = new Date().toISOString().split("T")[0];
@@ -324,7 +336,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
 
       if (fetchData) await fetchData();
       await loadClaimsFromDB();
-
       setLiquidatingClaim(null); 
       setFormDisbursedAmount("");
     } catch (error) {
@@ -406,36 +417,29 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
         {subTabActivity === "mutasi" && (
           <div className="space-y-4 animate-in fade-in">
             
-            {/* 1. ANALISA AI (DINAMIS & PUNYA GAYA BAHASA) */}
+            {/* 1. ANALISA AI (AUTO-PILOT & SYNC DENGAN SETTINGS) */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] relative">
-              <div className="flex justify-between items-start mb-3">
+              <div className="flex justify-between items-center mb-3 border-b-2 border-stone-100 pb-2">
                 <p className="text-[10px] font-black text-amber-600 tracking-wider uppercase flex items-center gap-1.5">
-                  <BrainCircuit size={14} /> <span>Analisis Asisten AI</span>
+                  <BrainCircuit size={14} /> <span>Analisis AI Otomatis</span>
                 </p>
-                <button onClick={() => setShowAiSettings(true)} className="p-1.5 bg-stone-50 border-2 border-[#1E1E1E] rounded-md shadow-[1px_1px_0px_0px_#1E1E1E] hover:bg-stone-100 active:translate-y-px transition">
-                  <Settings2 size={12} className="text-stone-700" />
-                </button>
+                {/* TOMBOL PENGATURAN DIHAPUS. UI MENJADI SUPER BERSIH! */}
               </div>
 
-              {!aiInsightText ? (
-                 <div className="flex flex-col items-center justify-center py-2 space-y-3">
-                    <p className="text-xs text-stone-500 font-bold text-center">AI siap membaca ringkasan dari filter yang sedang aktif.</p>
-                    <button onClick={generateDynamicInsight} disabled={isGeneratingInsight || filteredTransactions.length === 0} className="w-full bg-amber-400 text-amber-950 font-black text-xs p-3 rounded-lg border-2 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E] flex items-center justify-center gap-2 active:translate-y-px active:shadow-none transition disabled:opacity-50">
-                       {isGeneratingInsight ? <><Loader2 size={14} className="animate-spin" /> Menganalisa Data...</> : "🤖 Buat Analisa AI Sekarang"}
-                    </button>
-                 </div>
-              ) : (
-                 <div className="space-y-3">
-                    <p className="text-xs text-stone-700 font-bold leading-relaxed">{aiInsightText}</p>
-                    <button onClick={generateDynamicInsight} disabled={isGeneratingInsight} className="text-[10px] font-black text-stone-500 uppercase flex items-center gap-1.5 hover:text-stone-800 transition">
-                      {isGeneratingInsight ? <Loader2 size={12} className="animate-spin" /> : <Repeat size={12} />} 
-                      Muat Ulang Analisa
-                    </button>
-                 </div>
-              )}
+              <div className="min-h-[50px] flex items-center justify-center">
+                {isGeneratingInsight ? (
+                  <div className="flex w-full items-center justify-center gap-2 text-amber-600 font-black text-[10px] uppercase tracking-widest animate-pulse">
+                    <Loader2 size={16} className="animate-spin" /> MERACIK ANALISA...
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-700 font-bold leading-relaxed w-full">
+                    {aiInsightText}
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* 2. DONUT CHART */}
+            {/* 2. DONUT CHART (HANYA TERPENGARUH DATA MAKRO / PERIODE BULAN) */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] text-center">
               <p className="text-[10px] font-black text-stone-500 uppercase tracking-wide text-left mb-3 flex items-center gap-1.5"><Sparkles size={12}/> Distribusi Pengeluaran</p>
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
@@ -460,14 +464,14 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
               </div>
             </div>
             
-            {/* 3. PENCARIAN & FILTER BAR */}
+            {/* 3. PENCARIAN & FILTER BAR (HANYA MEMPENGARUHI DAFTAR TRANSAKSI DI BAWAH) */}
             <div className="space-y-2">
               <p className="text-[10px] font-black text-stone-500 uppercase tracking-wide mb-1 flex items-center gap-1"><Archive size={12}/> Buku Riwayat Lengkap</p>
               
               <div className="flex gap-2">
                 <div className="flex-1 bg-white border-2 border-[#1E1E1E] rounded-xl flex items-center px-3 shadow-[2px_2px_0px_0px_#1E1E1E]">
                   <Search size={16} className="text-stone-400 shrink-0" />
-                  <input type="text" placeholder="Cari transaksi..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full text-xs p-3 outline-none font-bold text-stone-700 bg-transparent" />
+                  <input type="text" placeholder="Cari transaksi (AI & Chart Kebal)..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full text-xs p-3 outline-none font-bold text-stone-700 bg-transparent" />
                   {searchQuery && <X size={14} className="text-stone-400 cursor-pointer shrink-0" onClick={() => setSearchQuery("")}/>}
                 </div>
                 <button onClick={() => setShowFilterModal(true)} className="bg-amber-100 border-2 border-[#1E1E1E] px-3.5 rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_#1E1E1E] hover:bg-amber-200 transition active:translate-y-px shrink-0">
@@ -492,7 +496,7 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
                 </div>
               )}
               
-              {/* DAFTAR TRANSAKSI MUTASI DENGAN LIMIT & LOAD MORE */}
+              {/* DAFTAR TRANSAKSI MUTASI (DATA MIKRO) */}
               <div className="space-y-2 mt-2">
                 {filteredTransactions.length === 0 && (
                   <div className="text-center py-8 border-2 border-dashed border-stone-300 rounded-xl bg-stone-50">
@@ -627,7 +631,7 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
         )}
       </div>
 
-      {/* --- MODAL FILTER BERJENJANG MUTASI --- */}
+      {/* --- MODAL FILTER MUTASI (YANG INI TETAP ADA) --- */}
       {showFilterModal && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-end justify-center sm:items-center sm:p-4" onClick={() => setShowFilterModal(false)}>
           <div className="w-full sm:max-w-sm bg-[#FDFBF7] border-t-4 sm:border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-5 animate-in slide-in-from-bottom-10" onClick={(e) => e.stopPropagation()}>
@@ -638,7 +642,7 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
             
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Calendar size={12}/> Periode Waktu</label>
+                <label className="text-[10px] font-black block text-stone-500 uppercase flex items-center gap-1"><Calendar size={12}/> Periode Waktu <span className="text-[8px] text-amber-600">(Mempengaruhi AI & Donut)</span></label>
                 <div className="flex gap-2">
                   {['Semua', 'Bulan Ini', 'Kustom'].map(opt => (
                     <button key={opt} onClick={() => setFilterPeriod(opt)} className={`flex-1 py-2 text-[11px] font-bold rounded-lg border-2 transition-all ${filterPeriod === opt ? 'bg-[#1E1E1E] text-white border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-white text-stone-600 border-[#1E1E1E]'}`}>{opt}</button>
@@ -684,43 +688,6 @@ JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
 
             <button onClick={() => setShowFilterModal(false)} className="w-full min-h-[48px] mt-4 bg-[#1E1E1E] text-white font-black text-xs uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] hover:bg-stone-800 transition active:translate-y-1 active:shadow-none">
               Terapkan Filter
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL PENGATURAN AI (DENGAN GAYA BAHASA) --- */}
-      {showAiSettings && (
-        <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4" onClick={() => setShowAiSettings(false)}>
-          <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-2xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-5 animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center border-b-2 border-[#1E1E1E] pb-3">
-              <h3 className="text-sm font-black text-stone-800 uppercase flex items-center gap-1.5"><Settings2 size={16}/> Parameter AI</h3>
-              <button type="button" onClick={() => setShowAiSettings(false)} className="min-w-[32px] min-h-[32px] border-2 border-[#1E1E1E] flex items-center justify-center bg-stone-200 rounded-lg hover:bg-rose-100 transition shadow-[2px_2px_0px_0px_#1E1E1E]"><X size={14} strokeWidth={3} /></button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black block text-stone-500 uppercase">Fokus Alokasi Dana</label>
-                <div className="flex gap-2 p-1 bg-stone-200 border-2 border-[#1E1E1E] rounded-xl h-11">
-                  <button type="button" onClick={() => setAiScope("PRIBADI")} className={`flex-1 text-[9px] font-black uppercase rounded-lg border-2 ${aiScope === 'PRIBADI' ? 'bg-sky-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Pribadi</button>
-                  <button type="button" onClick={() => setAiScope("USAHA")} className={`flex-1 text-[9px] font-black uppercase rounded-lg border-2 ${aiScope === 'USAHA' ? 'bg-orange-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Usaha</button>
-                  <button type="button" onClick={() => setAiScope("GABUNGAN")} className={`flex-1 text-[9px] font-black uppercase rounded-lg border-2 ${aiScope === 'GABUNGAN' ? 'bg-stone-50 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Gabungan</button>
-                </div>
-              </div>
-
-              {/* FITUR BARU: GAYA BAHASA */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black block text-stone-500 uppercase">Gaya Bahasa (Persona)</label>
-                <div className="flex flex-col gap-2">
-                   <button type="button" onClick={() => setAiPersona("Santai")} className={`w-full py-2.5 text-xs font-bold rounded-lg border-2 transition ${aiPersona === 'Santai' ? 'bg-emerald-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>😎 Santai (Asik, Gaul, "Bosku")</button>
-                   <button type="button" onClick={() => setAiPersona("Profesional")} className={`w-full py-2.5 text-xs font-bold rounded-lg border-2 transition ${aiPersona === 'Profesional' ? 'bg-indigo-400 text-white border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>💼 Profesional (Sopan & Baku)</button>
-                   <button type="button" onClick={() => setAiPersona("Galak/Disiplin")} className={`w-full py-2.5 text-xs font-bold rounded-lg border-2 transition ${aiPersona === 'Galak/Disiplin' ? 'bg-rose-500 text-white border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>🔥 Pelatih Disiplin (Galak & Blak-blakan)</button>
-                </div>
-              </div>
-            </div>
-            
-            <button onClick={saveAiSettings} className="w-full min-h-[48px] bg-amber-400 text-amber-950 font-black text-xs uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] transition active:translate-y-1 active:shadow-none">
-              Simpan Setelan
             </button>
           </div>
         </div>
