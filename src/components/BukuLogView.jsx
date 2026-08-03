@@ -143,7 +143,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   });
 
   // ==========================================
-  // AUTO-PILOT AI GENERATOR (SNIPER + RADAR MURNI)
+  // AUTO-PILOT AI GENERATOR DENGAN "KERANGKENG JSON"
   // ==========================================
   const generateDynamicInsight = async () => {
     setIsGeneratingInsight(true);
@@ -151,7 +151,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("API Key Gemini belum dipasang di .env");
 
-      // OTOMATIS SEDOT DARI MENU SETTINGS GLOBAL
       const savedPersona = localStorage.getItem('bukusaku_ai_persona') || localStorage.getItem('ai_persona') || "Santai";
 
       const totalMasuk = macroTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
@@ -159,25 +158,27 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
       const selisih = totalMasuk - totalKeluar;
       const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category} (${d.percentage}%)`).join(", ");
 
-      const prompt = `Anda adalah penasihat keuangan pribadi.
-Data transaksi pengguna saat ini:
-- Total Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
-- Total Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
-- Arus Kas (Net): Rp ${selisih.toLocaleString('id-ID')}
-- 3 Kategori Pengeluaran Terbesar: ${top3 || "Belum ada pengeluaran spesifik"}
+      // PROMPT DENGAN KERANGKENG JSON ANTI-BOCOR
+      const prompt = `Anda penasihat keuangan pribadi.
+Data:
+- Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
+- Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
+- Arus Kas: Rp ${selisih.toLocaleString('id-ID')}
+- 3 Pengeluaran Terbesar: ${top3 || "Belum ada"}
 
-GAYA BAHASA: "${savedPersona}".
-- Jika "Santai": Gaulkan bahasanya, panggil "Bosku", gunakan emoji.
-- Jika "Profesional": Formal, rapi, perencana keuangan profesional.
-- Jika "Galak/Disiplin": Tegas, blak-blakan, marahi jika boros.
+Gaya Bahasa: "${savedPersona}". (Santai = Gaul/Emoji. Profesional = Baku. Galak = Tegas/Marah jika boros).
 
-TUGAS: Berikan analisa singkat maksimal 3 kalimat!
-1. Evaluasi apakah bulan ini untung atau boncos.
-2. Soroti pos pengeluaran terbesarnya.
-3. Beri 1 saran praktis.
+TUGAS:
+Buat analisa maksimal 3 kalimat berisi:
+1. Evaluasi untung/boncos.
+2. Soroti pengeluaran terbesar.
+3. Saran praktis.
 
-ATURAN MUTLAK (BACA HATI-HATI):
-HANYA KELUARKAN HASIL AKHIR TEKS ANALISANYA SAJA! JANGAN PERNAH mengulang instruksi, JANGAN menulis proses berpikir, JANGAN menulis 'Role:', 'Input Data:', atau kalimat bahasa Inggris apa pun! Langsung berikan hasil percakapan finalnya tanpa basa-basi!`;
+ATURAN MUTLAK:
+WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN ADA PROSES BERPIKIR!
+{
+  "analisa_final": "Tuliskan 3 kalimat analisa Anda di sini"
+}`;
 
       const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -191,7 +192,18 @@ HANYA KELUARKAN HASIL AKHIR TEKS ANALISANYA SAJA! JANGAN PERNAH mengulang instru
         const responseData = await response.json();
 
         if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-          setAiInsightText(responseData.candidates[0].content.parts[0].text.trim());
+          let rawText = responseData.candidates[0].content.parts[0].text;
+          const jsonStart = rawText.indexOf('{');
+          const jsonEnd = rawText.lastIndexOf('}');
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+             rawText = rawText.substring(jsonStart, jsonEnd + 1);
+          }
+          try {
+            const parsedData = JSON.parse(rawText);
+            setAiInsightText(parsedData.analisa_final || "Analisa siap, Bosku!");
+          } catch (e) {
+            setAiInsightText(rawText.replace(/```json/g, '').replace(/```/g, '').trim());
+          }
           setIsGeneratingInsight(false);
           return; // SELESAI & SUKSES!
         }
@@ -220,7 +232,18 @@ HANYA KELUARKAN HASIL AKHIR TEKS ANALISANYA SAJA! JANGAN PERNAH mengulang instru
           const responseData = await response.json();
 
           if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-            successText = responseData.candidates[0].content.parts[0].text.trim();
+            let rawText = responseData.candidates[0].content.parts[0].text;
+            const jsonStart = rawText.indexOf('{');
+            const jsonEnd = rawText.lastIndexOf('}');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+               rawText = rawText.substring(jsonStart, jsonEnd + 1);
+            }
+            try {
+              const parsedData = JSON.parse(rawText);
+              successText = parsedData.analisa_final || "Analisa siap, Bosku!";
+            } catch (e) {
+              successText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+            }
             break; 
           } else if (!response.ok) {
             throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
@@ -238,7 +261,6 @@ HANYA KELUARKAN HASIL AKHIR TEKS ANALISANYA SAJA! JANGAN PERNAH mengulang instru
 
     } catch (err) {
       console.error("Kesalahan Fatal AI Insight:", err);
-      // BOCORKAN ERROR ASLI KE LAYAR 
       setAiInsightText(`⚠️ AI Gagal Memuat Analisa. Alasan: ${err.message}`);
     } finally {
       setIsGeneratingInsight(false);
