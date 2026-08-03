@@ -143,15 +143,15 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   });
 
   // ==========================================
-  // AUTO-PILOT AI GENERATOR (SYNC DENGAN SETTINGS)
+  // AUTO-PILOT AI GENERATOR (HYBRID MODE + ERROR REVEAL)
   // ==========================================
   const generateDynamicInsight = async () => {
     setIsGeneratingInsight(true);
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key Gemini tidak ditemukan.");
+      if (!apiKey) throw new Error("API Key Gemini belum dipasang di .env");
 
-      // OTOMATIS SEDOT DARI MENU SETTINGS GLOBAl
+      // OTOMATIS SEDOT DARI MENU SETTINGS GLOBAL
       const savedPersona = localStorage.getItem('bukusaku_ai_persona') || localStorage.getItem('ai_persona') || "Santai";
 
       const totalMasuk = macroTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
@@ -177,21 +177,51 @@ TUGAS: Berikan analisa singkat maksimal 3 kalimat saja!
 3. Beri 1 saran praktis.
 JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murni.`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      const payload = {
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7 } 
-      };
+      // STRATEGI HYBRID: Coba Flash dulu, kalau error pindah ke Pro
+      const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
+      let lastErrorMsg = "";
+      let successText = "";
 
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const responseData = await response.json();
+      for (const model of models) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+          const payload = {
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7 } 
+          };
 
-      if (!response.ok) throw new Error("API Error");
-      if (responseData.candidates && responseData.candidates.length > 0) {
-        setAiInsightText(responseData.candidates[0].content.parts[0].text);
+          const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+          const responseData = await response.json();
+
+          // Tangkap error asli dari Google jika status bukan 200 OK
+          if (!response.ok) {
+            throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
+          }
+
+          if (responseData.candidates && responseData.candidates.length > 0) {
+            successText = responseData.candidates[0].content.parts[0].text;
+            break; // BERHASIL! Langsung keluar dari loop pencarian mesin
+          } else {
+            throw new Error("Data balasan dari AI kosong");
+          }
+        } catch (err) {
+          lastErrorMsg = err.message;
+          console.warn(`Gagal menggunakan mesin ${model}. Alasan: ${err.message}`);
+          // Lanjut coba mesin berikutnya di dalam array models
+        }
       }
+
+      // Jika setelah mencoba semua mesin tetap gagal
+      if (successText) {
+        setAiInsightText(successText);
+      } else {
+        throw new Error(lastErrorMsg);
+      }
+
     } catch (err) {
-      setAiInsightText("Mohon maaf Bosku, koneksi asisten AI terputus. Coba refresh halaman.");
+      console.error("Kesalahan Fatal AI Insight:", err);
+      // TAMPILKAN ERROR ASLI KE LAYAR AGAR KITA TAHU PENYEBABNYA
+      setAiInsightText(`⚠️ Gagal memuat analisa AI. Alasan: ${err.message}`);
     } finally {
       setIsGeneratingInsight(false);
     }
@@ -212,7 +242,7 @@ JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murn
     }, 800);
 
     return () => clearTimeout(delayAi);
-  }, [macroTransactions, subTabActivity]); // HANYA terpancing saat data makro (Periode) berubah
+  }, [macroTransactions, subTabActivity]);
 
   const loadClaimsFromDB = async () => {
     try {
@@ -423,7 +453,6 @@ JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murn
                 <p className="text-[10px] font-black text-amber-600 tracking-wider uppercase flex items-center gap-1.5">
                   <BrainCircuit size={14} /> <span>Analisis AI Otomatis</span>
                 </p>
-                {/* TOMBOL PENGATURAN DIHAPUS. UI MENJADI SUPER BERSIH! */}
               </div>
 
               <div className="min-h-[50px] flex items-center justify-center">
@@ -631,7 +660,7 @@ JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murn
         )}
       </div>
 
-      {/* --- MODAL FILTER MUTASI (YANG INI TETAP ADA) --- */}
+      {/* --- MODAL FILTER MUTASI --- */}
       {showFilterModal && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-end justify-center sm:items-center sm:p-4" onClick={() => setShowFilterModal(false)}>
           <div className="w-full sm:max-w-sm bg-[#FDFBF7] border-t-4 sm:border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-5 animate-in slide-in-from-bottom-10" onClick={(e) => e.stopPropagation()}>
