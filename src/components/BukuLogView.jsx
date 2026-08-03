@@ -20,7 +20,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilterModal, setShowFilterModal] = useState(false);
   
-  // DEFAULT TAMPILAN AWAL: "Bulan Ini" dan "Semua" 
   const [filterPeriod, setFilterPeriod] = useState("Bulan Ini"); 
   const [filterType, setFilterType] = useState("Semua"); 
   const [filterCategory, setFilterCategory] = useState("Semua");
@@ -28,21 +27,22 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  // --- STATE SETTINGS AI ---
+  // --- STATE SETTINGS AI (Dengan Gaya Bahasa) ---
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [aiScope, setAiScope] = useState("PRIBADI");
+  const [aiPersona, setAiPersona] = useState(localStorage.getItem('bukusaku_ai_persona') || "Santai");
+
+  // --- STATE GENERATE ANALISA AI DINAMIS ---
+  const [aiInsightText, setAiInsightText] = useState("");
+  const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
 
   // --- STATE FILTER ARSIP KLAIM LUNAS ---
   const [claimFilterPeriod, setClaimFilterPeriod] = useState("Semua");
   const [claimStartDate, setClaimStartDate] = useState("");
   const [claimEndDate, setClaimEndDate] = useState("");
 
-  // =======================================================
-  // STATE BARU: BATAS TAMPILAN (LOAD MORE LOGIC)
-  // =======================================================
   const [visibleTxCount, setVisibleTxCount] = useState(30);
 
-  // FIXED: Auto-select akun default saat accounts selesai dimuat
   useEffect(() => {
     if (accounts && accounts.length > 0) {
       const defaultAcc = accounts.find(a => a.account_group === "PRIBADI" && a.type !== "CREDIT_CARD") || accounts[0];
@@ -52,7 +52,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     }
   }, [accounts]);
 
-  // PENERIMA SINYAL DARI BERANDA (AUTO-NAVIGASI TAB KLAIM)
   useEffect(() => {
     const targetTab = localStorage.getItem("targetBukuLogTab");
     if (targetTab) {
@@ -61,9 +60,10 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     }
   }, []);
 
-  // KEMBALIKAN BATAS TAMPILAN KE 30 JIKA FILTER/PENCARIAN BERUBAH
   useEffect(() => {
     setVisibleTxCount(30);
+    // Reset AI Insight text ketika filter berubah agar user diminta generate ulang
+    setAiInsightText(""); 
   }, [searchQuery, filterType, filterCategory, filterPeriod, startDate, endDate]);
 
   const unmaskNumber = (str) => parseInt(str.toString().replace(/\./g, ""), 10) || 0;
@@ -80,7 +80,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return cat; 
   };
 
-  // 1. DATA FILTERING MUTASI
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -105,7 +104,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return Array.from(new Set(expenseTxs.map(t => t.category))).filter(Boolean);
   }, [transactions]);
 
-  // 2. DONUT CHART LOGIC
   const expenseDistribution = useMemo(() => {
     const expenseTx = filteredTransactions.filter(t => t.type === "EXPENSE");
     const categoriesMap = {};
@@ -139,15 +137,64 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return slice;
   });
 
-  // 3. AI INSIGHT LOGIC
-  const computedLogAiCategoryInsight = useMemo(() => {
-    if (expenseDistribution.length === 0) return "Belum ada data pengeluaran untuk dianalisis AI pada filter ini.";
-    const top = expenseDistribution[0];
-    if (top.percentage >= 40) return `Analisis AI (${aiScope}): Porsi terbesar pengeluaran tersedot di "${top.category}" (${top.percentage}%). Awasi agar tidak over-budget ya Bosku!`;
-    return `Analisis AI (${aiScope}): Distribusi pos belanja berjalan seimbang tanpa lonjakan anomali yang mencurigakan.`;
-  }, [expenseDistribution, aiScope]);
+  // ==========================================
+  // LOGIKA BARU: GENERATE AI DINAMIS
+  // ==========================================
+  const generateDynamicInsight = async () => {
+    setIsGeneratingInsight(true);
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key Gemini tidak ditemukan.");
 
-  // LOAD KLAIM DB
+      const totalMasuk = filteredTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
+      const totalKeluar = filteredTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
+      const selisih = totalMasuk - totalKeluar;
+      const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category} (${d.percentage}%)`).join(", ");
+
+      const prompt = `Anda adalah penasihat keuangan pribadi.
+Data filter pengguna saat ini (Skope: ${aiScope}):
+- Total Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
+- Total Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
+- Arus Kas (Net): Rp ${selisih.toLocaleString('id-ID')}
+- 3 Kategori Pengeluaran Terbesar: ${top3 || "Belum ada data"}
+
+GAYA BAHASA YANG HARUS DIGUNAKAN: "${aiPersona}".
+- Jika "Santai": Gunakan bahasa gaul, santai, asik, panggil "Bosku", banyak emoji.
+- Jika "Profesional": Gunakan bahasa formal, sopan, terstruktur, seolah perencana keuangan profesional.
+- Jika "Galak/Disiplin": Tegas, blak-blakan, marahi jika boros/minus, tidak basa-basi.
+
+TUGAS: Berikan analisa singkat maksimal 3 kalimat saja.
+1. Evaluasi arus kas (apakah untung atau boncos).
+2. Soroti pengeluaran terbesarnya.
+3. Beri 1 saran praktis.
+JANGAN gunakan format markdown berlebihan, gunakan teks biasa.`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7 } // Temperature di-set 0.7 agar AI lebih kreatif dan luwes!
+      };
+
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const responseData = await response.json();
+
+      if (!response.ok) throw new Error("API Error");
+      if (responseData.candidates && responseData.candidates.length > 0) {
+        setAiInsightText(responseData.candidates[0].content.parts[0].text);
+      }
+    } catch (err) {
+      setAiInsightText("Mohon maaf Bosku, asisten AI sedang kelelahan atau koneksi terputus. Coba lagi nanti ya.");
+    } finally {
+      setIsGeneratingInsight(false);
+    }
+  };
+
+  const saveAiSettings = () => {
+    localStorage.setItem('bukusaku_ai_persona', aiPersona);
+    setShowAiSettings(false);
+    setAiInsightText(""); // Reset insight minta generate baru pake gaya bahasa baru
+  };
+
   const loadClaimsFromDB = async () => {
     try {
       const { data, error } = await supabase.from('reimbursement_claims').select('*').order('created_at', { ascending: false });
@@ -359,9 +406,9 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
         {subTabActivity === "mutasi" && (
           <div className="space-y-4 animate-in fade-in">
             
-            {/* 1. ANALISA AI */}
+            {/* 1. ANALISA AI (DINAMIS & PUNYA GAYA BAHASA) */}
             <div className="bg-white border-2 border-[#1E1E1E] p-4 rounded-xl shadow-[3px_3px_0px_0px_#1E1E1E] relative">
-              <div className="flex justify-between items-start mb-2">
+              <div className="flex justify-between items-start mb-3">
                 <p className="text-[10px] font-black text-amber-600 tracking-wider uppercase flex items-center gap-1.5">
                   <BrainCircuit size={14} /> <span>Analisis Asisten AI</span>
                 </p>
@@ -369,7 +416,23 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
                   <Settings2 size={12} className="text-stone-700" />
                 </button>
               </div>
-              <p className="text-xs text-stone-700 font-bold leading-relaxed">"{computedLogAiCategoryInsight}"</p>
+
+              {!aiInsightText ? (
+                 <div className="flex flex-col items-center justify-center py-2 space-y-3">
+                    <p className="text-xs text-stone-500 font-bold text-center">AI siap membaca ringkasan dari filter yang sedang aktif.</p>
+                    <button onClick={generateDynamicInsight} disabled={isGeneratingInsight || filteredTransactions.length === 0} className="w-full bg-amber-400 text-amber-950 font-black text-xs p-3 rounded-lg border-2 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E] flex items-center justify-center gap-2 active:translate-y-px active:shadow-none transition disabled:opacity-50">
+                       {isGeneratingInsight ? <><Loader2 size={14} className="animate-spin" /> Menganalisa Data...</> : "🤖 Buat Analisa AI Sekarang"}
+                    </button>
+                 </div>
+              ) : (
+                 <div className="space-y-3">
+                    <p className="text-xs text-stone-700 font-bold leading-relaxed">{aiInsightText}</p>
+                    <button onClick={generateDynamicInsight} disabled={isGeneratingInsight} className="text-[10px] font-black text-stone-500 uppercase flex items-center gap-1.5 hover:text-stone-800 transition">
+                      {isGeneratingInsight ? <Loader2 size={12} className="animate-spin" /> : <Repeat size={12} />} 
+                      Muat Ulang Analisa
+                    </button>
+                 </div>
+              )}
             </div>
 
             {/* 2. DONUT CHART */}
@@ -626,7 +689,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
         </div>
       )}
 
-      {/* --- MODAL PENGATURAN AI --- */}
+      {/* --- MODAL PENGATURAN AI (DENGAN GAYA BAHASA) --- */}
       {showAiSettings && (
         <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4" onClick={() => setShowAiSettings(false)}>
           <div className="w-full max-w-sm bg-[#FDFBF7] border-4 border-[#1E1E1E] rounded-2xl p-5 shadow-[8px_8px_0px_0px_#000] space-y-5 animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
@@ -634,17 +697,29 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
               <h3 className="text-sm font-black text-stone-800 uppercase flex items-center gap-1.5"><Settings2 size={16}/> Parameter AI</h3>
               <button type="button" onClick={() => setShowAiSettings(false)} className="min-w-[32px] min-h-[32px] border-2 border-[#1E1E1E] flex items-center justify-center bg-stone-200 rounded-lg hover:bg-rose-100 transition shadow-[2px_2px_0px_0px_#1E1E1E]"><X size={14} strokeWidth={3} /></button>
             </div>
+            
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-black block text-stone-500 uppercase">Fokus Alokasi Dana</label>
                 <div className="flex gap-2 p-1 bg-stone-200 border-2 border-[#1E1E1E] rounded-xl h-11">
-                  <button type="button" onClick={() => setAiScope("PRIBADI")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${aiScope === 'PRIBADI' ? 'bg-sky-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Pribadi</button>
-                  <button type="button" onClick={() => setAiScope("USAHA")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${aiScope === 'USAHA' ? 'bg-orange-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Usaha</button>
-                  <button type="button" onClick={() => setAiScope("GABUNGAN")} className={`flex-1 text-[10px] font-black uppercase rounded-lg border-2 ${aiScope === 'GABUNGAN' ? 'bg-stone-50 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Gabungan</button>
+                  <button type="button" onClick={() => setAiScope("PRIBADI")} className={`flex-1 text-[9px] font-black uppercase rounded-lg border-2 ${aiScope === 'PRIBADI' ? 'bg-sky-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Pribadi</button>
+                  <button type="button" onClick={() => setAiScope("USAHA")} className={`flex-1 text-[9px] font-black uppercase rounded-lg border-2 ${aiScope === 'USAHA' ? 'bg-orange-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Usaha</button>
+                  <button type="button" onClick={() => setAiScope("GABUNGAN")} className={`flex-1 text-[9px] font-black uppercase rounded-lg border-2 ${aiScope === 'GABUNGAN' ? 'bg-stone-50 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-transparent border-transparent text-stone-500'}`}>Gabungan</button>
+                </div>
+              </div>
+
+              {/* FITUR BARU: GAYA BAHASA */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black block text-stone-500 uppercase">Gaya Bahasa (Persona)</label>
+                <div className="flex flex-col gap-2">
+                   <button type="button" onClick={() => setAiPersona("Santai")} className={`w-full py-2.5 text-xs font-bold rounded-lg border-2 transition ${aiPersona === 'Santai' ? 'bg-emerald-400 border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>😎 Santai (Asik, Gaul, "Bosku")</button>
+                   <button type="button" onClick={() => setAiPersona("Profesional")} className={`w-full py-2.5 text-xs font-bold rounded-lg border-2 transition ${aiPersona === 'Profesional' ? 'bg-indigo-400 text-white border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>💼 Profesional (Sopan & Baku)</button>
+                   <button type="button" onClick={() => setAiPersona("Galak/Disiplin")} className={`w-full py-2.5 text-xs font-bold rounded-lg border-2 transition ${aiPersona === 'Galak/Disiplin' ? 'bg-rose-500 text-white border-[#1E1E1E] shadow-[2px_2px_0px_0px_#1E1E1E]' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>🔥 Pelatih Disiplin (Galak & Blak-blakan)</button>
                 </div>
               </div>
             </div>
-            <button onClick={() => setShowAiSettings(false)} className="w-full min-h-[48px] bg-amber-400 text-amber-950 font-black text-xs uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] transition active:translate-y-1 active:shadow-none">
+            
+            <button onClick={saveAiSettings} className="w-full min-h-[48px] bg-amber-400 text-amber-950 font-black text-xs uppercase tracking-widest rounded-xl border-2 border-[#1E1E1E] shadow-[4px_4px_0px_0px_#1E1E1E] transition active:translate-y-1 active:shadow-none">
               Simpan Setelan
             </button>
           </div>

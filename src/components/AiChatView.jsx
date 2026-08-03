@@ -3,28 +3,12 @@ import { Send, Camera, X, CheckCircle, Sparkles, ChevronDown, ArrowRightLeft, Tr
 import { supabase } from "../supabaseClient"; 
 
 const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-  const data = await res.json();
-  
-  if (!data.models) {
-    throw new Error("Gagal mengambil daftar mesin dari server Google.");
-  }
-
-  let validModels = data.models
-    .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-    .map(m => m.name.replace('models/', ''));
-
-  validModels.sort((a, b) => {
-    const scoreA = a.includes("flash") ? 2 : a.includes("pro") ? 1 : 0;
-    const scoreB = b.includes("flash") ? 2 : b.includes("pro") ? 1 : 0;
-    return scoreB - scoreA; 
-  });
-
+  // STRATEGI HYBRID: Tembak 1.5-flash dulu (cepat), kalau down fallback ke 1.5-pro (pintar)
+  const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
   let lastErrorMessage = "";
 
-  for (const model of validModels) {
+  for (const model of models) {
     try {
-      console.log(`[Auto-Discovery] Sedang mencoba menembus mesin: ${model}...`);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const contents = [{ role: "user", parts: [] }];
 
@@ -41,7 +25,7 @@ const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
           { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
           { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
         ],
-        generationConfig: { temperature: 0.1 }
+        generationConfig: { temperature: 0.1 } // Tetap dingin untuk akurasi format JSON
       };
 
       const response = await fetch(url, {
@@ -57,7 +41,6 @@ const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
       }
 
       if (responseData.candidates && responseData.candidates.length > 0) {
-        console.log(`✅ [BERHASIL!] Tembus menggunakan mesin: ${model}`);
         return responseData.candidates[0].content.parts[0].text; 
       } else {
         throw new Error("Data balasan kosong.");
@@ -67,9 +50,10 @@ const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
       if (err.message.includes("API key not valid")) {
         throw new Error("API Key Anda terdeteksi tidak valid / salah ketik.");
       }
+      console.warn(`Tembakan ke ${model} meleset, beralih ke mesin cadangan...`);
     }
   }
-  throw new Error(`Semua mesin di API Key ini diblokir Google. Error terakhir: ${lastErrorMessage}`);
+  throw new Error(`Gagal menghubungi server AI: ${lastErrorMessage}`);
 };
 
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
