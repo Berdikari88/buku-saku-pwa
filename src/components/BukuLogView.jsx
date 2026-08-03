@@ -143,7 +143,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   });
 
   // ==========================================
-  // AUTO-PILOT AI GENERATOR (HYBRID MODE + ERROR REVEAL)
+  // AUTO-PILOT AI GENERATOR (SNIPER + RADAR MURNI)
   // ==========================================
   const generateDynamicInsight = async () => {
     setIsGeneratingInsight(true);
@@ -177,41 +177,57 @@ TUGAS: Berikan analisa singkat maksimal 3 kalimat saja!
 3. Beri 1 saran praktis.
 JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murni.`;
 
-      // STRATEGI HYBRID: Coba Flash dulu, kalau error pindah ke Pro
-      const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
+      const payload = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7 } 
+      };
+
+      // FASE 1: TEMBAKAN KILAT
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const responseData = await response.json();
+
+        if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
+          setAiInsightText(responseData.candidates[0].content.parts[0].text);
+          setIsGeneratingInsight(false);
+          return; // SELESAI & SUKSES!
+        }
+      } catch (err) {
+        console.warn("Tembakan Kilat Flash meleset, menyalakan radar...");
+      }
+
+      // FASE 2: RADAR OTOMATIS
+      let validModels = [];
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const data = await res.json();
+      if (!data.models) throw new Error("Gagal mengambil daftar mesin dari server Google.");
+
+      validModels = data.models
+        .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+        .map(m => m.name.replace('models/', ''));
+
+      // FASE 3: EKSEKUSI AMAN DARI DAFTAR RADAR
       let lastErrorMsg = "";
       let successText = "";
 
-      for (const model of models) {
+      for (const model of validModels) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-          const payload = {
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7 } 
-          };
-
           const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const responseData = await response.json();
 
-          // Tangkap error asli dari Google jika status bukan 200 OK
-          if (!response.ok) {
-            throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
-          }
-
-          if (responseData.candidates && responseData.candidates.length > 0) {
+          if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
             successText = responseData.candidates[0].content.parts[0].text;
-            break; // BERHASIL! Langsung keluar dari loop pencarian mesin
-          } else {
-            throw new Error("Data balasan dari AI kosong");
+            break; 
+          } else if (!response.ok) {
+            throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
           }
         } catch (err) {
           lastErrorMsg = err.message;
-          console.warn(`Gagal menggunakan mesin ${model}. Alasan: ${err.message}`);
-          // Lanjut coba mesin berikutnya di dalam array models
         }
       }
 
-      // Jika setelah mencoba semua mesin tetap gagal
       if (successText) {
         setAiInsightText(successText);
       } else {
@@ -220,8 +236,8 @@ JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murn
 
     } catch (err) {
       console.error("Kesalahan Fatal AI Insight:", err);
-      // TAMPILKAN ERROR ASLI KE LAYAR AGAR KITA TAHU PENYEBABNYA
-      setAiInsightText(`⚠️ Gagal memuat analisa AI. Alasan: ${err.message}`);
+      // BOCORKAN ERROR ASLI KE LAYAR 
+      setAiInsightText(`⚠️ AI Gagal Memuat Analisa. Alasan: ${err.message}`);
     } finally {
       setIsGeneratingInsight(false);
     }
