@@ -70,11 +70,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return cat; 
   };
 
-  // ========================================================
-  // 1. DATA MAKRO (KHUSUS UNTUK AI & GRAFIK DONAT)
-  // KEBAL terhadap pencarian teks atau filter kategori.
-  // Hanya terpengaruh oleh Periode Waktu.
-  // ========================================================
   const macroTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (filterPeriod === "Bulan Ini") {
@@ -88,10 +83,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     });
   }, [transactions, filterPeriod, startDate, endDate]);
 
-  // ========================================================
-  // 2. DATA MIKRO (KHUSUS UNTUK DAFTAR TRANSAKSI DI BAWAH)
-  // Terpengaruh oleh semua filter (Pencarian, Tipe, Kategori)
-  // ========================================================
   const filteredTransactions = useMemo(() => {
     return macroTransactions.filter(t => {
       if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -108,7 +99,6 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return Array.from(new Set(expenseTxs.map(t => t.category))).filter(Boolean);
   }, [transactions]);
 
-  // DONUT CHART MENGGUNAKAN DATA MAKRO
   const expenseDistribution = useMemo(() => {
     const expenseTx = macroTransactions.filter(t => t.type === "EXPENSE");
     const categoriesMap = {};
@@ -143,7 +133,7 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   });
 
   // ==========================================
-  // AUTO-PILOT AI GENERATOR DENGAN "KERANGKENG JSON"
+  // AUTO-PILOT AI GENERATOR (TEXT NATURAL)
   // ==========================================
   const generateDynamicInsight = async () => {
     setIsGeneratingInsight(true);
@@ -155,30 +145,21 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
 
       const totalMasuk = macroTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
       const totalKeluar = macroTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
-      const selisih = totalMasuk - totalKeluar;
       const top3 = expenseDistribution.slice(0, 3).map(d => `${d.category} (${d.percentage}%)`).join(", ");
 
-      // PROMPT DENGAN KERANGKENG JSON ANTI-BOCOR
-      const prompt = `Anda penasihat keuangan pribadi.
-Data:
+      const prompt = `Anda adalah penasihat keuangan pribadi. Berikan ulasan yang natural, mengalir, dan layaknya ngobrol dengan pengguna.
+Data saat ini:
 - Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
 - Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
-- Arus Kas: Rp ${selisih.toLocaleString('id-ID')}
-- 3 Pengeluaran Terbesar: ${top3 || "Belum ada"}
+- Pengeluaran Terbesar: ${top3 || "Belum ada"}
 
-Gaya Bahasa: "${savedPersona}". (Santai = Gaul/Emoji. Profesional = Baku. Galak = Tegas/Marah jika boros).
+Gaya Bahasa: "${savedPersona}". (Jika Santai = panggil Bosku/gaul/banyak emoji. Jika Profesional = sopan/baku. Jika Galak = tegas/marahi jika boros).
 
 TUGAS:
-Buat analisa maksimal 3 kalimat berisi:
-1. Evaluasi untung/boncos.
-2. Soroti pengeluaran terbesar.
-3. Saran praktis.
+Ceritakan total pengeluarannya berapa, highlight kategori terbesarnya apa, lalu berikan saran. Biarkan kalimat mengalir natural seperti "Transaksi pengeluaranmu saat ini sebesar Rp... dan yang paling besar ada di kategori...". 
 
-ATURAN MUTLAK:
-WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN ADA PROSES BERPIKIR!
-{
-  "analisa_final": "Tuliskan 3 kalimat analisa Anda di sini"
-}`;
+ATURAN MUTLAK FORMAT: 
+Langsung mulai percakapan dalam bentuk satu paragraf utuh! DILARANG pakai format markdown (* atau #). DILARANG menulis proses berpikir atau kata pengantar seperti "Evaluasi/Saran/Role". Jangan kaku, buat senatural mungkin!`;
 
       const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -192,20 +173,11 @@ WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN 
         const responseData = await response.json();
 
         if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-          let rawText = responseData.candidates[0].content.parts[0].text;
-          const jsonStart = rawText.indexOf('{');
-          const jsonEnd = rawText.lastIndexOf('}');
-          if (jsonStart !== -1 && jsonEnd !== -1) {
-             rawText = rawText.substring(jsonStart, jsonEnd + 1);
-          }
-          try {
-            const parsedData = JSON.parse(rawText);
-            setAiInsightText(parsedData.analisa_final || "Analisa siap, Bosku!");
-          } catch (e) {
-            setAiInsightText(rawText.replace(/```json/g, '').replace(/```/g, '').trim());
-          }
+          let cleanText = responseData.candidates[0].content.parts[0].text.trim();
+          cleanText = cleanText.replace(/^(Analisa|Evaluasi|Saran|Role).*?:/gmi, '').trim(); 
+          setAiInsightText(cleanText);
           setIsGeneratingInsight(false);
-          return; // SELESAI & SUKSES!
+          return;
         }
       } catch (err) {
         console.warn("Tembakan Kilat Flash meleset, menyalakan radar...");
@@ -221,7 +193,7 @@ WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN 
         .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
         .map(m => m.name.replace('models/', ''));
 
-      // FASE 3: EKSEKUSI AMAN DARI DAFTAR RADAR
+      // FASE 3: EKSEKUSI AMAN
       let lastErrorMsg = "";
       let successText = "";
 
@@ -232,18 +204,8 @@ WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN 
           const responseData = await response.json();
 
           if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-            let rawText = responseData.candidates[0].content.parts[0].text;
-            const jsonStart = rawText.indexOf('{');
-            const jsonEnd = rawText.lastIndexOf('}');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-               rawText = rawText.substring(jsonStart, jsonEnd + 1);
-            }
-            try {
-              const parsedData = JSON.parse(rawText);
-              successText = parsedData.analisa_final || "Analisa siap, Bosku!";
-            } catch (e) {
-              successText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-            }
+            let cleanText = responseData.candidates[0].content.parts[0].text.trim();
+            successText = cleanText.replace(/^(Analisa|Evaluasi|Saran|Role).*?:/gmi, '').trim();
             break; 
           } else if (!response.ok) {
             throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
@@ -267,7 +229,6 @@ WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN 
     }
   };
 
-  // TRIGGER AUTO-PILOT AI (Dengan Debounce 800ms)
   useEffect(() => {
     if (subTabActivity !== "mutasi") return;
     
@@ -540,7 +501,7 @@ WAJIB BALAS DENGAN FORMAT JSON MURNI DI BAWAH INI. JANGAN ADA TEKS LAIN, JANGAN 
               <div className="flex gap-2">
                 <div className="flex-1 bg-white border-2 border-[#1E1E1E] rounded-xl flex items-center px-3 shadow-[2px_2px_0px_0px_#1E1E1E]">
                   <Search size={16} className="text-stone-400 shrink-0" />
-                  <input type="text" placeholder="Cari transaksi (AI & Chart Kebal)..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full text-xs p-3 outline-none font-bold text-stone-700 bg-transparent" />
+                  <input type="text" placeholder="Cari transaksi..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full text-xs p-3 outline-none font-bold text-stone-700 bg-transparent" />
                   {searchQuery && <X size={14} className="text-stone-400 cursor-pointer shrink-0" onClick={() => setSearchQuery("")}/>}
                 </div>
                 <button onClick={() => setShowFilterModal(true)} className="bg-amber-100 border-2 border-[#1E1E1E] px-3.5 rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_#1E1E1E] hover:bg-amber-200 transition active:translate-y-px shrink-0">
