@@ -366,13 +366,14 @@ ${contextHistory}
 
 Pesan baru: "${currentInput}"
 
-ATURAN KETAT (BACA HATI-HATI):
+ATURAN KETAT MUTLAK (BACA HATI-HATI):
 1. JANGAN PERNAH set "is_transaction": true JIKA nominal angka (amount) BELUM PASTI! Tanya dulu nominalnya.
 2. Jika pengguna menyebut nominal di pesan terbaru, GABUNGKAN dengan konteks riwayat sebelumnya.
 3. "account_id" WAJIB diisi persis dengan (ID UUID) dari daftar di atas.
 4. "category" WAJIB diisi dengan SATU nama kategori yang paling cocok HANYA DARI DAFTAR KATEGORI DI ATAS. PENTING: Jika pengguna mengetik kata atau singkatan yang persis sama dengan nama kategori di daftar (misal: "KOPAG"), ANDA WAJIB memilih kategori "KOPAG"! Jangan diubah ke kategori lain.
+5. KELUARKAN HANYA OBJEK JSON MURNI TANPA MARKDOWN (TANPA \`\`\`json). JANGAN ADA PROSES BERPIKIR ATAU TEKS APAPUN SEBELUM/SESUDAH JSON.
 
-BALAS JSON MURNI:
+BALAS DENGAN FORMAT INI PERSIS:
 { 
   "is_transaction": true/false, 
   "title": "Judul Transaksi Singkat", 
@@ -500,7 +501,7 @@ BALAS JSON MURNI:
       const categoriesFormatted = dbCategories.join(', ');
       
       const prompt = `Anda adalah asisten data keuangan. Pindai gambar struk atau bukti transfer ini.
-      Keluarkan HANYA format JSON valid tanpa awalan/akhiran apapun.
+      ATURAN MUTLAK: Keluarkan HANYA format JSON valid tanpa awalan/akhiran apapun. JANGAN ADA PROSES BERPIKIR. JANGAN ADA MARKDOWN \`\`\`json.
       Format wajib:
       {
         "title": "Nama Toko atau Judul Transaksi Singkat",

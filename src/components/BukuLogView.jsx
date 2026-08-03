@@ -166,16 +166,18 @@ Data transaksi pengguna saat ini:
 - Arus Kas (Net): Rp ${selisih.toLocaleString('id-ID')}
 - 3 Kategori Pengeluaran Terbesar: ${top3 || "Belum ada pengeluaran spesifik"}
 
-GAYA BAHASA YANG HARUS DIGUNAKAN: "${savedPersona}".
-- Jika "Santai": Gunakan bahasa gaul, santai, asik, panggil "Bosku", gunakan emoji dengan pas.
-- Jika "Profesional": Gunakan bahasa formal, rapi, terstruktur, seolah perencana keuangan profesional.
-- Jika "Galak/Disiplin": Tegas, blak-blakan, marahi jika boros/minus, jangan basa-basi.
+GAYA BAHASA: "${savedPersona}".
+- Jika "Santai": Gaulkan bahasanya, panggil "Bosku", gunakan emoji.
+- Jika "Profesional": Formal, rapi, perencana keuangan profesional.
+- Jika "Galak/Disiplin": Tegas, blak-blakan, marahi jika boros.
 
-TUGAS: Berikan analisa singkat maksimal 3 kalimat saja!
+TUGAS: Berikan analisa singkat maksimal 3 kalimat!
 1. Evaluasi apakah bulan ini untung atau boncos.
 2. Soroti pos pengeluaran terbesarnya.
 3. Beri 1 saran praktis.
-JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murni.`;
+
+ATURAN MUTLAK (BACA HATI-HATI):
+HANYA KELUARKAN HASIL AKHIR TEKS ANALISANYA SAJA! JANGAN PERNAH mengulang instruksi, JANGAN menulis proses berpikir, JANGAN menulis 'Role:', 'Input Data:', atau kalimat bahasa Inggris apa pun! Langsung berikan hasil percakapan finalnya tanpa basa-basi!`;
 
       const payload = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -189,7 +191,7 @@ JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murn
         const responseData = await response.json();
 
         if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-          setAiInsightText(responseData.candidates[0].content.parts[0].text);
+          setAiInsightText(responseData.candidates[0].content.parts[0].text.trim());
           setIsGeneratingInsight(false);
           return; // SELESAI & SUKSES!
         }
@@ -218,7 +220,7 @@ JANGAN gunakan format markdown berlebihan (* atau #), langsung berikan teks murn
           const responseData = await response.json();
 
           if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-            successText = responseData.candidates[0].content.parts[0].text;
+            successText = responseData.candidates[0].content.parts[0].text.trim();
             break; 
           } else if (!response.ok) {
             throw new Error(responseData.error?.message || `HTTP Error ${response.status}`);
