@@ -3,68 +3,47 @@ import { Send, Camera, X, CheckCircle, Sparkles, ChevronDown, ArrowRightLeft, Tr
 import { supabase } from "../supabaseClient"; 
 
 const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
-  const contents = [{ role: "user", parts: [] }];
-  if (base64Image) {
-    contents[0].parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Image } });
-  }
-  contents[0].parts.push({ text: prompt });
-
-  const payload = {
-    contents,
-    safetySettings: [
-      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-    ],
-    generationConfig: { temperature: 0.1 }
-  };
-
-  // FASE 1: TEMBAKAN KILAT (Smart Sniper ke model tercepat)
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const responseData = await response.json();
-    
-    if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-      return responseData.candidates[0].content.parts[0].text;
-    }
-  } catch (err) {
-    console.warn("Fase 1 (Flash) meleset. Menyalakan Radar pencari mesin resmi Google...");
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+  const data = await res.json();
+  
+  if (!data.models) {
+    throw new Error("Gagal mengambil daftar mesin dari server Google.");
   }
 
-  // FASE 2: RADAR OTOMATIS (Sedot daftar model yang diizinkan untuk API Key ini)
-  let validModels = [];
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-    const data = await res.json();
-    if (data.models) {
-      validModels = data.models
-        .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-        .map(m => m.name.replace('models/', ''));
-        
-      // Urutkan: Flash di atas, lalu Pro, dsb
-      validModels.sort((a, b) => {
-        const scoreA = a.includes("flash") ? 2 : a.includes("pro") ? 1 : 0;
-        const scoreB = b.includes("flash") ? 2 : b.includes("pro") ? 1 : 0;
-        return scoreB - scoreA; 
-      });
-    }
-  } catch (err) {
-    throw new Error("Gagal mengambil daftar mesin dari Google. Pastikan API Key valid atau koneksi stabil.");
-  }
+  let validModels = data.models
+    .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+    .map(m => m.name.replace('models/', ''));
 
-  if (validModels.length === 0) throw new Error("Tidak ada mesin AI yang aktif di API Key Anda.");
+  validModels.sort((a, b) => {
+    const scoreA = a.includes("flash") ? 2 : a.includes("pro") ? 1 : 0;
+    const scoreB = b.includes("flash") ? 2 : b.includes("pro") ? 1 : 0;
+    return scoreB - scoreA; 
+  });
 
-  // FASE 3: EKSEKUSI AMAN (Coba satu per satu mesin yang resmi ada dari Google)
   let lastErrorMessage = "";
+
   for (const model of validModels) {
     try {
+      console.log(`[Auto-Discovery] Sedang mencoba menembus mesin: ${model}...`);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const contents = [{ role: "user", parts: [] }];
+
+      if (base64Image) {
+        contents[0].parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Image } });
+      }
+      contents[0].parts.push({ text: prompt });
+
+      const payload = {
+        contents,
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ],
+        generationConfig: { temperature: 0.1 }
+      };
+
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,11 +52,15 @@ const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
 
       const responseData = await response.json();
 
-      if (response.ok && responseData.candidates && responseData.candidates.length > 0) {
-        console.log(`✅ [BERHASIL!] Tembus menggunakan mesin fallback: ${model}`);
+      if (!response.ok) {
+        throw new Error(`[${response.status}] ${responseData.error?.message || 'API Error'}`);
+      }
+
+      if (responseData.candidates && responseData.candidates.length > 0) {
+        console.log(`✅ [BERHASIL!] Tembus menggunakan mesin: ${model}`);
         return responseData.candidates[0].content.parts[0].text; 
       } else {
-         throw new Error(responseData.error?.message || "Data balasan kosong.");
+        throw new Error("Data balasan kosong.");
       }
     } catch (err) {
       lastErrorMessage = err.message;
@@ -86,7 +69,7 @@ const callGeminiDirectly = async (prompt, base64Image, apiKey) => {
       }
     }
   }
-  throw new Error(`Semua mesin resmi Google menolak. Error Terakhir: ${lastErrorMessage}`);
+  throw new Error(`Semua mesin di API Key ini diblokir Google. Error terakhir: ${lastErrorMessage}`);
 };
 
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
@@ -345,13 +328,13 @@ export default function AiChatView({ session, fetchData, chatHistory = [], setCh
         return;
       }
 
+      // KUNCI PERBAIKAN: Berikan ID UUID Dompet dengan sangat jelas agar AI bisa Transfer
       const accountsFormatted = accounts.map(a => {
         const group = (a.account_group || 'PRIBADI').toUpperCase();
-        return `- ${a.name} (ID UUID: ${a.id}) [GRUP: ${group}]`;
+        return `- ${a.name} (UUID: ${a.id}) [GRUP: ${group}]`;
       }).join('\n');
 
       const contextHistory = chatHistory.slice(-4).map(m => `${m.sender === 'user' ? 'Pengguna' : 'AI'}: ${m.text}`).join('\n');
-      
       const categoriesFormatted = dbCategories.join(', ');
 
       const prompt = `Anda asisten keuangan cerdas.
@@ -366,20 +349,21 @@ ${contextHistory}
 
 Pesan baru: "${currentInput}"
 
-ATURAN KETAT MUTLAK (BACA HATI-HATI):
-1. JANGAN PERNAH set "is_transaction": true JIKA nominal angka (amount) BELUM PASTI! Tanya dulu nominalnya.
-2. Jika pengguna menyebut nominal di pesan terbaru, GABUNGKAN dengan konteks riwayat sebelumnya.
-3. "account_id" WAJIB diisi persis dengan (ID UUID) dari daftar di atas.
-4. "category" WAJIB diisi dengan SATU nama kategori yang paling cocok HANYA DARI DAFTAR KATEGORI DI ATAS. PENTING: Jika pengguna mengetik kata atau singkatan yang persis sama dengan nama kategori di daftar (misal: "KOPAG"), ANDA WAJIB memilih kategori "KOPAG"! Jangan diubah ke kategori lain.
-5. KELUARKAN HANYA OBJEK JSON MURNI TANPA MARKDOWN (TANPA \`\`\`json). JANGAN ADA PROSES BERPIKIR ATAU TEKS APAPUN SEBELUM/SESUDAH JSON.
+ATURAN KETAT (BACA HATI-HATI):
+1. Jika isi pesan tentang "pindah dana", "transfer", "tarik tunai", atau "top up", maka "type" WAJIB diisi "TRANSFER".
+2. Khusus untuk TRANSFER: Anda WAJIB mengisi "account_id" (sebagai sumber/asal) dan "to_account_id" (sebagai tujuan). Keduanya harus diisi dengan UUID persis dari daftar rekening di atas.
+3. Jika pesan BUKAN tentang transfer, maka "to_account_id" biarkan null, dan "type" diisi "EXPENSE" atau "INCOME".
+4. JANGAN PERNAH set "is_transaction": true JIKA nominal angka (amount) BELUM PASTI! Tanya dulu nominalnya.
+5. "category" WAJIB diisi dengan SATU nama kategori dari daftar. Jika transfer, isi saja "Transfer" atau kategori yang relevan.
 
-BALAS DENGAN FORMAT INI PERSIS:
+BALAS HANYA OBJEK JSON MURNI TANPA MARKDOWN:
 { 
   "is_transaction": true/false, 
   "title": "Judul Transaksi Singkat", 
-  "amount": angka_murni_tanpa_titik (contoh: 50000. Jika belum ada isi 0), 
-  "type": "EXPENSE", 
-  "account_id": "Kode UUID Dompet", 
+  "amount": angka_murni_tanpa_titik (contoh: 50000), 
+  "type": "EXPENSE/INCOME/TRANSFER", 
+  "account_id": "UUID Dompet Asal", 
+  "to_account_id": "UUID Dompet Tujuan (atau null jika bukan transfer)",
   "category": "Pilih SATU dari daftar kategori", 
   "is_reimburse": false, 
   "is_recurring": true/false,
@@ -412,22 +396,47 @@ BALAS DENGAN FORMAT INI PERSIS:
             const fallbackAcc = accounts.find(a => a.name.toLowerCase().includes(String(parsedAccountId).toLowerCase())) || accounts[0];
             parsedAccountId = fallbackAcc ? fallbackAcc.id : null;
         }
+
+        // PENCOCOKAN DOMPET TUJUAN (KHUSUS TRANSFER)
+        let parsedToAccountId = data.to_account_id || null;
+        if (parsedToAccountId) {
+            const isToIdValid = accounts.some(a => a.id === parsedToAccountId);
+            if (!isToIdValid) {
+                const fallbackToAcc = accounts.find(a => a.name.toLowerCase().includes(String(parsedToAccountId).toLowerCase()));
+                parsedToAccountId = fallbackToAcc ? fallbackToAcc.id : null;
+            }
+        }
         
         const isRecurringBool = String(data.is_recurring).toLowerCase() === 'true';
 
+        let finalType = data.type;
         let finalCategory = data.category;
-        const matchedCategory = dbCategories.find(c => c.toLowerCase() === String(finalCategory).toLowerCase());
-        const forcedCat = dbCategories.find(c => currentInput.toLowerCase().includes(c.toLowerCase()));
-
-        if (forcedCat) {
-          finalCategory = forcedCat; 
-        } else if (matchedCategory) {
-          finalCategory = matchedCategory; 
+        
+        // FAILSAFE TERAKHIR JIKA AI MASIH BANDEL MENGANGGAP TRANSFER SEBAGAI EXPENSE
+        const lowerInput = currentInput.toLowerCase();
+        if (lowerInput.includes("pindah") || lowerInput.includes("transfer") || lowerInput.includes("tarik tunai") || lowerInput.includes("top up")) {
+            finalType = "TRANSFER";
+            finalCategory = "Transfer";
+            
+            // Jika AI gagal nebak rekening tujuan, kita cari rekening lain otomatis agar tidak error
+            if (!parsedToAccountId || parsedToAccountId === parsedAccountId) {
+                 const alternativeAcc = accounts.find(a => a.id !== parsedAccountId);
+                 parsedToAccountId = alternativeAcc ? alternativeAcc.id : null;
+            }
         } else {
-          finalCategory = dbCategories.includes("Lain-lain") ? "Lain-lain" : (dbCategories[0] || "Lain-lain");
+            const matchedCategory = dbCategories.find(c => c.toLowerCase() === String(finalCategory).toLowerCase());
+            const forcedCat = dbCategories.find(c => lowerInput.includes(c.toLowerCase()));
+            if (forcedCat) {
+              finalCategory = forcedCat; 
+            } else if (matchedCategory) {
+              finalCategory = matchedCategory; 
+            } else {
+              finalCategory = dbCategories.includes("Lain-lain") ? "Lain-lain" : (dbCategories[0] || "Lain-lain");
+            }
         }
 
-        executeAddTransaction(data.title, cleanAmount.toString(), data.type, parsedAccountId, data.is_reimburse, finalCategory);
+        // PERUBAHAN KRUSIAL: Memasukkan parsedToAccountId ke fungsi eksekutor
+        executeAddTransaction(data.title, cleanAmount.toString(), finalType, parsedAccountId, data.is_reimburse, finalCategory, null, parsedToAccountId);
 
         if (isRecurringBool) {
           try {
@@ -445,7 +454,7 @@ BALAS DENGAN FORMAT INI PERSIS:
               user_id: activeSession.user.id,
               title: data.title || "Tagihan Rutin",
               amount: cleanAmount,
-              type: data.type || "EXPENSE",
+              type: finalType || "EXPENSE",
               category: finalCategory,
               account_id: parsedAccountId,
               next_run_date: nextRunDateStr,
@@ -454,7 +463,6 @@ BALAS DENGAN FORMAT INI PERSIS:
 
             if (recErr) {
               console.error("Gagal simpan tagihan rutin (AI):", recErr);
-              alert("Sistem Gagal Menyimpan Rutinitas Bulanan: " + recErr.message);
             }
           } catch (err) {
             console.error("Error Sistem Rutin:", err);
@@ -501,7 +509,7 @@ BALAS DENGAN FORMAT INI PERSIS:
       const categoriesFormatted = dbCategories.join(', ');
       
       const prompt = `Anda adalah asisten data keuangan. Pindai gambar struk atau bukti transfer ini.
-      ATURAN MUTLAK: Keluarkan HANYA format JSON valid tanpa awalan/akhiran apapun. JANGAN ADA PROSES BERPIKIR. JANGAN ADA MARKDOWN \`\`\`json.
+      Keluarkan HANYA format JSON valid tanpa awalan/akhiran apapun. JANGAN ADA TEKS LAIN.
       Format wajib:
       {
         "title": "Nama Toko atau Judul Transaksi Singkat",

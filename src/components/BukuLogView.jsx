@@ -31,6 +31,8 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
   // --- STATE SETTINGS AI ---
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [aiScope, setAiScope] = useState("PRIBADI");
+  const [aiInsightText, setAiInsightText] = useState("");
+  const [isGeneratingInsight, setIsGeneratingInsight] = useState(true);
 
   // --- STATE FILTER ARSIP KLAIM LUNAS ---
   const [claimFilterPeriod, setClaimFilterPeriod] = useState("Semua");
@@ -139,13 +141,79 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
     return slice;
   });
 
-  // 3. AI INSIGHT LOGIC
-  const computedLogAiCategoryInsight = useMemo(() => {
-    if (expenseDistribution.length === 0) return "Belum ada data pengeluaran untuk dianalisis AI pada filter ini.";
-    const top = expenseDistribution[0];
-    if (top.percentage >= 40) return `Analisis AI (${aiScope}): Porsi terbesar pengeluaran tersedot di "${top.category}" (${top.percentage}%). Awasi agar tidak over-budget ya Bosku!`;
-    return `Analisis AI (${aiScope}): Distribusi pos belanja berjalan seimbang tanpa lonjakan anomali yang mencurigakan.`;
-  }, [expenseDistribution, aiScope]);
+  // ========================================================
+  // 3. AI INSIGHT LOGIC (TERINTEGRASI DENGAN API GENERATIF)
+  // ========================================================
+  const generateDynamicInsight = async () => {
+    setIsGeneratingInsight(true);
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key belum diset.");
+
+      const totalMasuk = filteredTransactions.filter(t => t.type === "INCOME").reduce((acc, curr) => acc + curr.amount, 0);
+      const totalKeluar = filteredTransactions.filter(t => t.type === "EXPENSE").reduce((acc, curr) => acc + curr.amount, 0);
+      const topCat = expenseDistribution.length > 0 ? expenseDistribution[0].category : "Belum ada";
+
+      const savedPersona = localStorage.getItem('bukusaku_ai_persona') || localStorage.getItem('ai_persona') || "Santai";
+
+      const prompt = `Anda asisten keuangan. Buat ulasan 2 kalimat natural.
+Konteks Fokus: ${aiScope}
+Pemasukan: Rp ${totalMasuk.toLocaleString('id-ID')}
+Pengeluaran: Rp ${totalKeluar.toLocaleString('id-ID')}
+Pengeluaran terbesar: ${topCat}
+
+ATURAN MUTLAK:
+1. Jawab seperti ngobrol biasa ke pengguna, sesuaikan dengan gaya persona: "${savedPersona}".
+2. KELUARKAN HANYA OBJEK JSON MURNI TANPA MARKDOWN. Jangan menulis proses berpikir Anda!
+{ "ulasan": "Tuliskan 2 kalimat ulasan natural Anda di sini" }`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const data = await res.json();
+      let validModels = data.models?.filter(m => m.supportedGenerationMethods?.includes("generateContent")).map(m => m.name.replace('models/', '')) || ["gemini-1.5-flash"];
+      
+      validModels.sort((a, b) => (b.includes("flash") ? 2 : 0) - (a.includes("flash") ? 2 : 0));
+
+      let successText = "";
+      for (const model of validModels) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7 } })
+          });
+          const responseData = await response.json();
+          if (response.ok && responseData.candidates) {
+            let rawText = responseData.candidates[0].content.parts[0].text;
+            const jStart = rawText.indexOf('{');
+            const jEnd = rawText.lastIndexOf('}');
+            if (jStart !== -1 && jEnd !== -1) rawText = rawText.substring(jStart, jEnd + 1);
+            const parsed = JSON.parse(rawText);
+            successText = parsed.ulasan;
+            break;
+          }
+        } catch(e) { continue; }
+      }
+      
+      if (successText) setAiInsightText(successText);
+      else throw new Error("Gagal parsing JSON");
+    } catch (err) {
+      setAiInsightText("Oops, Asisten AI sedang tidur atau koneksi terputus.");
+    } finally {
+      setIsGeneratingInsight(false);
+    }
+  };
+
+  useEffect(() => {
+    if (subTabActivity !== "mutasi") return;
+    const delay = setTimeout(() => {
+      if (filteredTransactions.length > 0) generateDynamicInsight();
+      else {
+        setAiInsightText("Belum ada rekam jejak transaksi di periode ini yang bisa dianalisa.");
+        setIsGeneratingInsight(false);
+      }
+    }, 1000);
+    return () => clearTimeout(delay);
+  }, [filteredTransactions, aiScope, subTabActivity]);
 
   // LOAD KLAIM DB
   const loadClaimsFromDB = async () => {
@@ -369,7 +437,17 @@ export default function BukuLogView({ accounts = [], setAccounts, transactions =
                   <Settings2 size={12} className="text-stone-700" />
                 </button>
               </div>
-              <p className="text-xs text-stone-700 font-bold leading-relaxed">"{computedLogAiCategoryInsight}"</p>
+              <div className="min-h-[40px] flex items-center">
+                {isGeneratingInsight ? (
+                  <div className="flex w-full items-center justify-center gap-2 text-amber-600 font-black text-[10px] uppercase tracking-widest animate-pulse">
+                    <Loader2 size={14} className="animate-spin" /> MERACIK ANALISA...
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-700 font-bold leading-relaxed w-full">
+                    {aiInsightText}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* 2. DONUT CHART */}
