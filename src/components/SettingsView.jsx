@@ -63,6 +63,9 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
   const [catName, setCatName] = useState("");
   const [catIcon, setCatIcon] = useState("box");
   const [catLoading, setCatLoading] = useState(false);
+  
+  // PENAMBAHAN STATE KHUSUS UNTUK MENYIMPAN DAFTAR KATEGORI KUSTOM PENGGUNA
+  const [userCategories, setUserCategories] = useState([]);
 
   const [isAiStyleModalOpen, setIsAiStyleModalOpen] = useState(false);
   const [aiStyle, setAiStyle] = useState(() => localStorage.getItem('aiPersona') || 'skena');
@@ -115,6 +118,29 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
     
     return () => { if (toastTimeout.current) clearTimeout(toastTimeout.current); };
   }, []);
+
+  // PENAMBAHAN USEEFFECT KHUSUS UNTUK LOAD KATEGORI KUSTOM SAAT MODAL DIBUKA
+  useEffect(() => {
+    if (isCategoryModalOpen) {
+      async function fetchUserCategories() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data, error } = await supabase
+              .from('categories')
+              .select('*')
+              .eq('user_id', user.id);
+            if (!error && data) {
+              setUserCategories(data);
+            }
+          }
+        } catch (err) {
+          console.error("Gagal memuat kategori kustom:", err);
+        }
+      }
+      fetchUserCategories();
+    }
+  }, [isCategoryModalOpen]);
 
   const formatRupiahInput = (value, setterFunction) => {
     const numericValue = value.replace(/[^0-9]/g, "");
@@ -385,6 +411,20 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
       showToast(`Kategori '${catName}' berhasil didaftarkan!`, "success");
       setCatName(""); setCatIcon("box"); setIsCategoryModalOpen(false);
     } catch (error) { showToast("Gagal menambah kategori: " + error.message, "error"); } finally { setCatLoading(false); }
+  };
+
+  // PENAMBAHAN FUNGSI HAPUS KATEGORI KUSTOM PENGGUNA
+  const handleDeleteCategory = async (id, name) => {
+    const confirmDelete = window.confirm(`PERINGATAN!\nYakin ingin menghapus kategori [${name}]?\n(Transaksi lama yang menggunakan kategori ini akan tetap ada, tapi disarankan untuk mengubahnya).`);
+    if (!confirmDelete) return;
+    try {
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) throw error;
+      showToast(`Kategori '${name}' berhasil dihapus!`, "success");
+      setUserCategories(prev => prev.filter(c => c.id !== id));
+    } catch (error) {
+      showToast("Gagal menghapus kategori: " + error.message, "error");
+    }
   };
 
   // FIXED: Bersihkan state lokal saat Logout agar tidak bocor ke sesi berikutnya
@@ -753,13 +793,30 @@ export default function SettingsView({ setAccounts, setTransactions, setChatHist
         </div>
       )}
 
-      {/* MODAL KATEGORI */}
+      {/* MODAL KATEGORI - UPDATED DENGAN LIST DAN HAPUS */}
       {isCategoryModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
-          <div className="w-full max-w-sm bg-[#F8F5F2] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[6px_6px_0px_0px_#1E1E1E] space-y-4 animate-in slide-in-from-bottom-8">
+          <div className="w-full max-w-sm bg-[#F8F5F2] border-4 border-[#1E1E1E] rounded-t-3xl sm:rounded-3xl p-6 shadow-[6px_6px_0px_0px_#1E1E1E] space-y-4 animate-in slide-in-from-bottom-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center"><div className="flex items-center gap-2"><Tags size={18} className="text-sky-600" /><h4 className="text-xs font-black uppercase tracking-wider">Kategori Kustom</h4></div><button onClick={() => setIsCategoryModalOpen(false)} className="w-7 h-7 bg-stone-200 border border-[#1E1E1E] rounded-lg flex items-center justify-center hover:bg-stone-300"><X size={14} /></button></div>
             <div className="bg-sky-50 p-3 rounded-xl border-2 border-sky-300 border-dashed"><p className="text-[9px] font-bold text-sky-800 leading-relaxed text-center">Personalisasi pos transaksi agar sesuai dengan gaya hidup dan kebutuhan akuntansi Anda.</p></div>
-            <form onSubmit={handleCreateCategory} className="space-y-4 mt-2">
+            
+            {/* DAFTAR KATEGORI KUSTOM PENGGUNA */}
+            {userCategories.length > 0 && (
+              <div className="space-y-2 mt-2">
+                <p className="text-[10px] font-black text-stone-500 uppercase">Kategori Milikmu:</p>
+                {userCategories.map(cat => (
+                  <div key={cat.id} className="flex items-center justify-between bg-white border-2 border-[#1E1E1E] p-2.5 rounded-xl shadow-[2px_2px_0px_0px_#1E1E1E]">
+                    <span className="text-xs font-black uppercase truncate text-[#1E1E1E] flex items-center gap-2">
+                       {cat.name}
+                    </span>
+                    <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="ml-3 w-7 h-7 bg-rose-100 hover:bg-rose-200 border-2 border-[#1E1E1E] rounded-lg flex items-center justify-center flex-shrink-0 transition active:scale-95"><Trash2 size={12} className="text-rose-600" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* FORM TAMBAH KATEGORI BARU */}
+            <form onSubmit={handleCreateCategory} className="space-y-4 mt-2 border-t-2 border-dashed border-stone-300 pt-4">
               <div className="space-y-1.5"><label className="text-[10px] font-black text-stone-500 uppercase">Nama Kategori Baru</label><input type="text" value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="Skincare, Mainan, dll" className="w-full p-2.5 text-xs border-2 border-[#1E1E1E] rounded-xl font-bold uppercase outline-none focus:border-sky-500 transition" required /></div>
               <div className="space-y-1.5"><label className="text-[10px] font-black text-stone-500 uppercase">Pilih Visual Ikon</label>
                 <div className="grid grid-cols-3 gap-2">
